@@ -58,7 +58,7 @@ jobs:
           node-version: 24
 
       - name: Install semantic-release plugins
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Run Semantic Release
         id: semantic
