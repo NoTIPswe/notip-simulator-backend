@@ -1,0 +1,6 @@
+{
+    "sonarlint.connectedMode.project": {
+        "connectionId": "notipswe",
+        "projectKey": "NoTIPswe_notip-simulator-backend"
+    }
+}
