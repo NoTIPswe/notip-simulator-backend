@@ -21,6 +21,8 @@ type GatewayStore interface {
 	CreateSensor(ctx context.Context, sensor domain.SimSensor) (int64, error)
 	ListSensors(ctx context.Context, gatewayID int64) ([]*domain.SimSensor, error)
 	DeleteSensor(ctx context.Context, id int64) error
+	GetSensor(ctx context.Context, id int64) (*domain.SimSensor, error)
+	UpdateFrequency(ctx context.Context, id int64, frequency int) error
 }
 
 // Runs the full factory-key provisioning bootstrap. Internally generates an EC keypair and CSR, then calls POST /api/provision/onboard.
@@ -32,17 +34,24 @@ type ProvisioningClient interface {
 type GatewayPublisher interface {
 	Publish(ctx context.Context, subject string, payload []byte) error
 	Close() error
+	Reconnect(ctx context.Context) error
+}
+
+// CommandSubscription uses NATS for incoming commands.
+type CommandSubscription interface {
+	Messages() <-chan domain.IncomingCommand
+	Close() error
 }
 
 // Opens a per-gateway mTLS NATS connection using the gateway's certificate and private key.
 type GatewayConnector interface {
-	Connect(ctx context.Context, certPEM []byte, keyPEM []byte) (GatewayPublisher, error)
+	Connect(ctx context.Context, certPEM []byte, keyPEM []byte, tenantID string, managementGatewayID uuid.UUID) (GatewayPublisher, CommandSubscription, error)
 }
 
 // Encryptor encrypts a float64 sensor value with a gateway's EncryptionKey.
 // Generates a fresh 12-byte IV per call.
 type Encryptor interface {
-	Encrypt(key domain.EncryptionKey, value float64) (domain.EncryptedPayload, error)
+	Encrypt(key domain.EncryptionKey, data []byte) (domain.EncryptedPayload, error)
 }
 
 // Clock abstracts time.Now() for deterministic tests.

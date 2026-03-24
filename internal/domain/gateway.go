@@ -23,7 +23,9 @@ func NewEncryptionKey(key []byte) (EncryptionKey, error) {
 
 // Bytes returns the raw byte slice of the key. This is the only way to access the key material. Used exculisively by AESGCMEncryptor.
 func (k EncryptionKey) Bytes() []byte {
-	return k.value
+	b := make([]byte, len(k.value))
+	copy(b, k.value[:])
+	return b
 }
 
 // The three-part output of Encryptor.Encrypt. Assembled into TelemetryEnvelope.
@@ -49,6 +51,8 @@ type TelemetryEnvelope struct {
 type CreateGatewayRequest struct {
 	Name            string
 	TenantID        string
+	FactoryID       string
+	FactoryKey      string
 	SerialNumber    string
 	Model           string
 	FirmwareVersion string
@@ -57,8 +61,13 @@ type CreateGatewayRequest struct {
 
 // Command object for load-test batch creation.
 type BulkCreateRequest struct {
-	Count    int
-	TenantID string
+	Count           int
+	TenantID        string
+	FactoryID       string
+	FactoryKey      string
+	Model           string
+	FirmwareVersion string
+	SendFrequencyMs int
 }
 
 // The result of a successful provisioning bootstrap.
@@ -151,6 +160,49 @@ type NetworkDegradationParams struct {
 
 type DisconnectParams struct {
 	DurationSeconds int
+}
+
+//Commands
+
+type CommandType string
+
+const (
+	ConfigUpdate CommandType = "config_update"
+	FirmwarePush CommandType = "firmware_push"
+)
+
+type CommandACKStatus string
+
+const (
+	ACK     CommandACKStatus = "ack"
+	NACK    CommandACKStatus = "nack"
+	Expired CommandACKStatus = "expired"
+)
+
+type CommandConfigPayload struct {
+	SendFrequencyMs *int           `json:"send_frequency_ms,omitempty"`
+	Status          *GatewayStatus `json:"status,omitempty"`
+}
+
+type CommandFirmwarePayload struct {
+	FirmwareVersion string `json:"firmware_version"`
+	DownloadURL     string `json:"download_url"`
+}
+
+type IncomingCommand struct {
+	CommandID       string
+	Type            CommandType
+	ConfigPayload   *CommandConfigPayload
+	FirmwarePayload *CommandFirmwarePayload
+	IssuedAt        time.Time
+}
+
+// CommandACK.
+type CommandACK struct {
+	CommandID string           `json:"commandId"`
+	Status    CommandACKStatus `json:"status"`
+	Message   *string          `json:"message,omitempty"`
+	Timestamp time.Time        `json:"timestamp"`
 }
 
 // Dispatched to a running GatewayWorker via its anomalyCh.

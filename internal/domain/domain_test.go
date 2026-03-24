@@ -1,0 +1,181 @@
+package domain_test
+
+import (
+	"testing"
+
+	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
+)
+
+//EncryptionKey.
+
+func TestNewEncryptionKey_Valid32Bytes(t *testing.T) {
+	raw := make([]byte, 32)
+	for i := range raw {
+		raw[i] = byte(i)
+	}
+	key, err := domain.NewEncryptionKey(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := key.Bytes(); len(got) != 32 {
+		t.Errorf("want 32 bytes, got %d", len(got))
+	}
+}
+
+func TestNewEncryptionKey_WrongLength_ReturnsError(t *testing.T) {
+	cases := [][]byte{
+		{},
+		make([]byte, 16),
+		make([]byte, 31),
+		make([]byte, 33),
+		make([]byte, 64),
+	}
+	for _, raw := range cases {
+		_, err := domain.NewEncryptionKey(raw)
+		if err == nil {
+			t.Errorf("expected error for key of length %d, got nil", len(raw))
+		}
+	}
+}
+
+func TestEncryptionKey_Bytes_ReturnsCopy(t *testing.T) {
+	raw := make([]byte, 32)
+	raw[0] = 0xAB
+	key, _ := domain.NewEncryptionKey(raw)
+
+	b1 := key.Bytes()
+	b1[0] = 0x00 // mutate the returned slice.
+
+	b2 := key.Bytes()
+	if b2[0] == 0x00 {
+		t.Error("Bytes() should return a copy, not expose internal state")
+	}
+}
+
+// GatewayStatus.
+func TestGatewayStatus_Values_Distinct(t *testing.T) {
+	statuses := []domain.GatewayStatus{
+		domain.Provisioning,
+		domain.Running,
+		domain.Stopped,
+		domain.Decommissioned,
+	}
+	seen := map[domain.GatewayStatus]bool{}
+	for _, s := range statuses {
+		if seen[s] {
+			t.Errorf("duplicate GatewayStatus value: %v", s)
+		}
+		seen[s] = true
+	}
+}
+
+//SensorType.
+
+func TestSensorType_AllConstantsDeclared(t *testing.T) {
+	types := []domain.SensorType{
+		domain.Temperature,
+		domain.Humidity,
+		domain.Pressure,
+		domain.Movement,
+		domain.Biometric,
+	}
+	if len(types) != 5 {
+		t.Errorf("expected 5 sensor types, got %d", len(types))
+	}
+}
+
+// GenerationAlgorithmtype.
+func TestGenerationAlgorithmType_AllConstantsDeclared(t *testing.T) {
+	algos := []domain.GenerationAlgorithmType{
+		domain.UniformRandom,
+		domain.SineWave,
+		domain.Spike,
+		domain.Constant,
+	}
+	if len(algos) != 4 {
+		t.Errorf("expected 4 algorithm types, got %d", len(algos))
+	}
+}
+
+//AnomalyType.
+
+func TestAnomalyType_Values_Distinct(t *testing.T) {
+	if domain.NetworkDegradation == domain.Disconnect {
+		t.Error("NetworkDegradation and Disconnect must be distinct")
+	}
+}
+
+//CommandType & CommandACKStatus.
+
+func TestCommandType_Values_Distinct(t *testing.T) {
+	if domain.ConfigUpdate == domain.FirmwarePush {
+		t.Error("ConfigUpdate and FirmwarePush must be distinct")
+	}
+}
+
+func TestCommandACKStatus_Values_Distinct(t *testing.T) {
+	statuses := []domain.CommandACKStatus{domain.ACK, domain.NACK, domain.Expired}
+	seen := map[domain.CommandACKStatus]bool{}
+	for _, s := range statuses {
+		if seen[s] {
+			t.Errorf("duplicate CommandACKStatus: %v", s)
+		}
+		seen[s] = true
+	}
+}
+
+//Value Objects, zero-value sanity.
+
+func TestTelemetryEnvelope_ZeroValue_NoPanic(t *testing.T) {
+	var e domain.TelemetryEnvelope
+	_ = e.GatewayID
+	_ = e.SensorID
+}
+
+func TestCreateGatewayRequest_Fields(t *testing.T) {
+	r := domain.CreateGatewayRequest{
+		TenantID:        "t1",
+		FactoryID:       "fid",
+		FactoryKey:      "fkey",
+		SendFrequencyMs: 1000,
+	}
+	if r.TenantID != "t1" {
+		t.Error("TenantID not set")
+	}
+	if r.FactoryID != "fid" {
+		t.Error("FactoryID not set")
+	}
+	if r.FactoryKey != "fkey" {
+		t.Error("FactoryKey not set")
+	}
+	if r.SendFrequencyMs != 1000 {
+		t.Error("SendFrequencyMs not set")
+	}
+}
+
+func TestGatewayConfigUpdate_NilPointers_NoPanic(t *testing.T) {
+	u := domain.GatewayConfigUpdate{}
+	if u.SendFrequencyMs != nil {
+		t.Error("expected nil SendFrequencyMs")
+	}
+	if u.Status != nil {
+		t.Error("expected nil Status")
+	}
+}
+
+func TestNetworkDegradationParams_Fields(t *testing.T) {
+	p := domain.NetworkDegradationParams{DurationSeconds: 30, PacketLossPct: 75.5}
+	if p.DurationSeconds != 30 {
+		t.Error("DurationSeconds not set")
+	}
+	if p.PacketLossPct != 75.5 {
+		t.Error("PacketLossPct not set")
+	}
+}
+
+func TestSensorOutlierCommand_NilValue_NoPanic(t *testing.T) {
+	cmd := domain.SensorOutlierCommand{}
+	if cmd.Value != nil {
+		t.Error("expected nil Value pointer")
+	}
+}

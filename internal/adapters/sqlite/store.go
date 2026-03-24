@@ -126,32 +126,94 @@ func (s *SQLiteGatewayStore) UpdateProvisioned(ctx context.Context, id int64, re
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE gateways SET
-			provisioned = 1, cert_pem = ?, private_key_pem = ?, encryption_key = ?
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE gateways 
+		SET provisioned = 1, cert_pem = ?, private_key_pem = ?, encryption_key = ?
 		WHERE id = ?`,
 		result.CertPEM,
 		result.PrivateKeyPEM,
 		result.AESKey.Bytes(),
 		id,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	// Confirm that the target gateway exists by checking the number of affected rows.
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("gateway with ID %d not found", id)
+	}
+
+	return nil
 }
 
 func (s *SQLiteGatewayStore) UpdateStatus(ctx context.Context, id int64, status domain.GatewayStatus) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	_, err := s.db.ExecContext(ctx, `UPDATE gateways SET status = ? WHERE id = ?`, string(status), id)
-	return err
+	// Execute the update statement and capture the result metadata.
+	res, err := s.db.ExecContext(ctx, `UPDATE gateways SET status = ? WHERE id = ?`, string(status), id)
+	if err != nil {
+		return err
+	}
+
+	// Verify that at least one record was modified by the operation.
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("gateway with ID %d not found", id)
+	}
+
+	return nil
+}
+
+func (s *SQLiteGatewayStore) UpdateFrequency(ctx context.Context, id int64, frequency int) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	// Update the reporting frequency for the specified gateway instance.
+	res, err := s.db.ExecContext(ctx, `UPDATE gateways SET send_frequency_ms = ? WHERE id = ?`, frequency, id)
+	if err != nil {
+		return err
+	}
+
+	// An error is returned if no records match the provided gateway ID.
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("gateway with ID %d not found", id)
+	}
+
+	return nil
 }
 
 func (s *SQLiteGatewayStore) UpdateFirmwareVersion(ctx context.Context, id int64, version string) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
-	_, err := s.db.ExecContext(ctx, `UPDATE gateways SET firmware_version = ? WHERE id = ?`, version, id)
-	return err
+	// Persist the new firmware version string in the database.
+	res, err := s.db.ExecContext(ctx, `UPDATE gateways SET firmware_version = ? WHERE id = ?`, version, id)
+	if err != nil {
+		return err
+	}
+
+	// Ensure the update operation targeted an existing record.
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("gateway with ID %d not found", id)
+	}
+
+	return nil
 }
 
 func (s *SQLiteGatewayStore) DeleteGateway(ctx context.Context, id int64) error {
@@ -211,6 +273,11 @@ func (s *SQLiteGatewayStore) DeleteSensor(ctx context.Context, id int64) error {
 
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sensors WHERE id = ?`, id)
 	return err
+}
+
+func (s *SQLiteGatewayStore) GetSensor(ctx context.Context, id int64) (*domain.SimSensor, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT * FROM sensors WHERE id = ?`, id)
+	return scanSensor(row)
 }
 
 // --- Helper functions below ---

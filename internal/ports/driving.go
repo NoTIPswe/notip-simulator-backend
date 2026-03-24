@@ -22,7 +22,7 @@ type GatewayLifecycleService interface {
 // SensorManagementService handles sensor CRUD on a running gateway worker.
 // Called by SensorHandler.
 type SensorManagementService interface {
-	AddSensor(ctx context.Context, gatewayID int64, sensor domain.SimSensor) error
+	AddSensor(ctx context.Context, gatewayID int64, sensor domain.SimSensor) (*domain.SimSensor, error)
 	ListSensors(ctx context.Context, gatewayID int64) ([]*domain.SimSensor, error)
 	DeleteSensor(ctx context.Context, sensorID int64) error
 }
@@ -33,4 +33,8 @@ type SimulatorControlService interface {
 	UpdateConfig(ctx context.Context, managementID uuid.UUID, update domain.GatewayConfigUpdate) error
 	InjectGatewayAnomaly(ctx context.Context, managementID uuid.UUID, cmd domain.GatewayAnomalyCommand) error
 	InjectSensorOutlier(ctx context.Context, managementID uuid.UUID, cmd domain.SensorOutlierCommand) error
+}
+
+type DecommissionEventReceiver interface {
+	HandleDecommission(tenantID string, managementGatewayID string)
 }

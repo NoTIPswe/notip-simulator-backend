@@ -2,56 +2,188 @@ package app
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
+	nethttp "net/http"
 	"os"
 	"time"
 
-	"github.com/NoTIPswe/notip-simulator-backend/internal/health"
+	"github.com/prometheus/client_golang/prometheus/promhttp" // Aggiunto per l'handler delle metriche
+
+	"github.com/NoTIPswe/notip-simulator-backend/internal/adapters"
+	httpadapter "github.com/NoTIPswe/notip-simulator-backend/internal/adapters/http"
+	natsadapter "github.com/NoTIPswe/notip-simulator-backend/internal/adapters/nats"
+	"github.com/NoTIPswe/notip-simulator-backend/internal/adapters/sqlite"
+	"github.com/NoTIPswe/notip-simulator-backend/internal/config"
+	"github.com/NoTIPswe/notip-simulator-backend/internal/metrics"
+
+	natsio "github.com/nats-io/nats.go"
 )
 
 const (
-	defaultPort           = "8080"
-	readHeaderTimeout     = 5 * time.Second
 	serverShutdownTimeout = 10 * time.Second
+	workerStopTimeout     = 5 * time.Second
 )
 
 func Run(ctx context.Context) error {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = defaultPort
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", health.Handler)
+	store, err := setupDatabase(ctx, cfg.SQLitePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = store.Close() }()
 
-	srv := &http.Server{
-		Addr:              ":" + port,
-		Handler:           mux,
-		ReadHeaderTimeout: readHeaderTimeout,
+	met := metrics.NewMetrics()
+	clock := adapters.SystemClock{}
+
+	registry := NewGatewayRegistry(
+		store,
+		httpadapter.NewProvisioningServiceClient(cfg.ProvisioningURL),
+		natsadapter.NewNATSMTLSConnector(cfg.NATSUrl, cfg.NATSCACertPath, clock),
+		adapters.AESGCMEncryptor{},
+		clock,
+		cfg,
+		met,
+	)
+
+	globalNats, err := setupDecommissionListener(ctx, cfg, registry)
+	if err != nil {
+		return err
+	}
+	defer globalNats.Close()
+
+	if cfg.RecoveryMode {
+		slog.Info("RecoveryMode is enabled, restoring provisioned gateways...")
+		if err := registry.RestoreAll(ctx); err != nil {
+			slog.Error("Failed to restore some or all gateways", "err", err)
+		}
+	} else {
+		slog.Info("RecoveryMode is disabled, skipping SQLite state hydration.")
 	}
 
-	serverErr := make(chan error, 1)
+	serverErr := make(chan error, 2)
+	metricsServer := startMetricsServer(cfg.MetricsAddr, serverErr)
+	apiServer := startAPIServer(cfg, registry, store, serverErr)
+
+	return handleShutdown(ctx, apiServer, metricsServer, registry, serverErr)
+}
+
+// Sets up the SQLite database and runs migrations.
+func setupDatabase(ctx context.Context, path string) (*sqlite.SQLiteGatewayStore, error) {
+	store, err := sqlite.NewStore(path)
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite store: %w", err)
+	}
+	if err := store.RunMigrations(ctx); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("run sqlite migrations: %w", err)
+	}
+	return store, nil
+}
+
+// Configures the global NATS connection and starts the decommission listener.
+func setupDecommissionListener(ctx context.Context, cfg *config.Config, registry *GatewayRegistry) (*natsio.Conn, error) {
+	caCert, err := os.ReadFile(cfg.NATSCACertPath)
+	if err != nil {
+		return nil, fmt.Errorf("read nats ca cert: %w", err)
+	}
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(caCert) {
+		return nil, errors.New("failed to parse global NATS ca cert")
+	}
+
+	globalNats, err := natsio.Connect(cfg.NATSUrl,
+		natsio.Secure(&tls.Config{RootCAs: caPool}),
+		natsio.MaxReconnects(-1),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("global nats connect: %w", err)
+	}
+
+	js, err := globalNats.JetStream()
+	if err != nil {
+		globalNats.Close()
+		return nil, fmt.Errorf("global jetstream context: %w", err)
+	}
+
+	listener := natsadapter.NewNATSDecommissionListener(js, registry)
 	go func() {
-		slog.Info("starting HTTP server", "port", port)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- fmt.Errorf("http server: %w", err)
+		slog.Info("Starting NATS Decommission Listener...")
+		if err := listener.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("Decommission listener stopped with error", "err", err)
 		}
 	}()
 
+	return globalNats, nil
+}
+
+// Starts the Prometheus metrics HTTP server.
+func startMetricsServer(addr string, errCh chan<- error) *nethttp.Server {
+	mux := nethttp.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	srv := &nethttp.Server{Addr: addr, Handler: mux}
+
+	go func() {
+		slog.Info("Starting metrics server", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+			errCh <- fmt.Errorf("metrics server error: %w", err)
+		}
+	}()
+	return srv
+}
+
+// Wires the handlers and starts the main HTTP API server.
+func startAPIServer(cfg *config.Config, registry *GatewayRegistry, store *sqlite.SQLiteGatewayStore, errCh chan<- error) *httpadapter.HTTPServer {
+	gwHandler := httpadapter.NewGatewayHandler(registry, registry)
+	sensorHandler := httpadapter.NewSensorHandler(registry)
+	anomalyHandler := httpadapter.NewAnomalyHandler(registry, store)
+
+	srv := httpadapter.NewHTTPServer(
+		cfg.HTTPAddr,
+		cfg.SimTokenSecret,
+		gwHandler,
+		sensorHandler,
+		anomalyHandler,
+	)
+
+	go func() {
+		slog.Info("Starting HTTP API server", "addr", cfg.HTTPAddr)
+		if err := srv.Start(); err != nil && !errors.Is(err, nethttp.ErrServerClosed) {
+			errCh <- fmt.Errorf("http api server: %w", err)
+		}
+	}()
+	return srv
+}
+
+// Manages graceful shutdown for servers and running workers.
+func handleShutdown(ctx context.Context, apiSrv *httpadapter.HTTPServer, metSrv *nethttp.Server, registry *GatewayRegistry, errCh <-chan error) error {
 	select {
-	case err := <-serverErr:
+	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		slog.Info("shutting down server")
+		slog.Info("Shutdown signal received, initiating graceful shutdown")
+
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("server shutdown: %w", err)
-		}
-	}
 
-	return nil
+		if err := apiSrv.Stop(shutdownCtx); err != nil {
+			slog.Error("API server shutdown error", "err", err)
+		}
+		if err := metSrv.Shutdown(shutdownCtx); err != nil {
+			slog.Error("Metrics server shutdown error", "err", err)
+		}
+
+		slog.Info("Stopping all gateway workers...")
+		registry.StopAll(workerStopTimeout)
+
+		slog.Info("Graceful shutdown completed")
+		return nil
+	}
 }

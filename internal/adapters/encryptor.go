@@ -7,14 +7,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"math"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
 )
 
 type AESGCMEncryptor struct{}
 
-func (e AESGCMEncryptor) Encrypt(key domain.EncryptionKey, value float64) (domain.EncryptedPayload, error) {
+func (e AESGCMEncryptor) Encrypt(key domain.EncryptionKey, data []byte) (domain.EncryptedPayload, error) {
 	block, err := aes.NewCipher(key.Bytes())
 	if err != nil {
 		return domain.EncryptedPayload{}, fmt.Errorf("create cipher: %w", err)
@@ -30,19 +29,7 @@ func (e AESGCMEncryptor) Encrypt(key domain.EncryptionKey, value float64) (domai
 		return domain.EncryptedPayload{}, fmt.Errorf("generate IV: %w", err)
 	}
 
-	plaintext := math.Float64bits(value)
-	plaintextBytes := []byte{
-		byte(plaintext >> 56),
-		byte(plaintext >> 48),
-		byte(plaintext >> 40),
-		byte(plaintext >> 32),
-		byte(plaintext >> 24),
-		byte(plaintext >> 16),
-		byte(plaintext >> 8),
-		byte(plaintext),
-	}
-
-	ciphertext := aesgcm.Seal(nil, iv, plaintextBytes, nil)
+	ciphertext := aesgcm.Seal(nil, iv, data, nil)
 
 	// GCM appends the auth tag at the end of the ciphertext
 	tagSize := aesgcm.Overhead()

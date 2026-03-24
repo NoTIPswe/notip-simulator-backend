@@ -8,38 +8,59 @@ import (
 	"os"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/ports"
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 )
 
 type NATSMTLSConnector struct {
 	natsURL    string
 	caCertPath string
+	clock      ports.Clock
 }
 
-func NewNATSMTLSConnector(natsURL, caCertPath string) *NATSMTLSConnector {
+func NewNATSMTLSConnector(natsURL, caCertPath string, clock ports.Clock) *NATSMTLSConnector {
 	return &NATSMTLSConnector{
 		natsURL:    natsURL,
 		caCertPath: caCertPath,
+		clock:      clock,
 	}
 }
 
-func (c *NATSMTLSConnector) Connect(ctx context.Context, certPEM []byte, keyPEM []byte) (ports.GatewayPublisher, error) {
+func (c *NATSMTLSConnector) Connect(ctx context.Context, certPEM []byte, keyPEM []byte, tenantID string, managementGatewayID uuid.UUID) (ports.GatewayPublisher, ports.CommandSubscription, error) {
 	tlsCfg, err := buildTLSConfig(c.caCertPath, certPEM, keyPEM)
 	if err != nil {
-		return nil, fmt.Errorf("build TLS config: %w", err)
+		return nil, nil, fmt.Errorf("build TLS config: %w", err)
 	}
 
-	nc, err := nats.Connect(c.natsURL, nats.Secure(tlsCfg), nats.MaxReconnects(-1))
+	opts := []nats.Option{
+		nats.Secure(tlsCfg),
+		nats.MaxReconnects(-1),
+	}
+
+	nc, err := nats.Connect(c.natsURL, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("connect to NATS: %w", err)
+		return nil, nil, fmt.Errorf("connect to NATS: %w", err)
 	}
 
-	pub, err := NewNATSGatewayPublisher(nc)
+	js, err := nc.JetStream()
 	if err != nil {
 		nc.Close()
-		return nil, err
+		return nil, nil, fmt.Errorf("create JetStream context: %w", err)
 	}
-	return pub, nil
+
+	pub, err := NewNATSGatewayPublisher(nc, c.natsURL, opts...)
+	if err != nil {
+		nc.Close()
+		return nil, nil, err
+	}
+
+	sub, err := NewNATSGatewaySubscriber(js, tenantID, managementGatewayID.String(), pub, c.clock)
+	if err != nil {
+		_ = pub.Close()
+		return nil, nil, fmt.Errorf("create subscriber: %w", err)
+	}
+
+	return pub, sub, nil
 }
 
 // First it reads and parses the CA certificate, then it builds the client certificate and key, and finally it constructs a tls.Config with the appropriate settings for mutual TLS authentication.
