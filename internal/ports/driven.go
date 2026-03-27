@@ -54,7 +54,7 @@ type Encryptor interface {
 	Encrypt(key domain.EncryptionKey, data []byte) (domain.EncryptedPayload, error)
 }
 
-// Clock abstracts time.Now() for deterministic tests.
+// Nower abstracts time.Now() for deterministic tests.
 type Nower interface {
 	Now() time.Time
 }

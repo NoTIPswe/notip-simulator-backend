@@ -15,17 +15,15 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/migrations"
 )
 
-const gatewayColumns = `id, management_gateway_id, factory_id, factory_key, serial_number, model,
-	firmware_version, provisioned, cert_pem, private_key_pem, encryption_key,
-	send_frequency_ms, status, tenant_id, created_at`
+const getGatewayByIDQuery = `SELECT id, management_gateway_id, factory_id, factory_key, serial_number, model, firmware_version, provisioned, cert_pem, private_key_pem, encryption_key, send_frequency_ms, status, tenant_id, created_at FROM gateways WHERE id = ?`
 
-const getGatewayByIDQuery = `SELECT ` + gatewayColumns + ` FROM gateways WHERE id = ?`
-const getGatewayByManagementIDQuery = `SELECT ` + gatewayColumns + ` FROM gateways WHERE management_gateway_id = ?`
-const listGatewaysQuery = `SELECT ` + gatewayColumns + ` FROM gateways`
+const getGatewayByManagementIDQuery = `SELECT id, management_gateway_id, factory_id, factory_key, serial_number, model, firmware_version, provisioned, cert_pem, private_key_pem, encryption_key, send_frequency_ms, status, tenant_id, created_at FROM gateways WHERE management_gateway_id = ?`
 
-const sensorColumns = `id, gateway_id, sensor_id, type, min_range, max_range, algorithm, created_at`
-const listSensorsByGatewayIDQuery = `SELECT ` + sensorColumns + ` FROM sensors WHERE gateway_id = ?`
-const getSensorByIDQuery = `SELECT ` + sensorColumns + ` FROM sensors WHERE id = ?`
+const listGatewaysQuery = `SELECT id, management_gateway_id, factory_id, factory_key, serial_number, model, firmware_version, provisioned, cert_pem, private_key_pem, encryption_key, send_frequency_ms, status, tenant_id, created_at FROM gateways`
+
+const listSensorsByGatewayIDQuery = `SELECT id, gateway_id, sensor_id, type, min_range, max_range, algorithm, created_at FROM sensors WHERE gateway_id = ?`
+
+const getSensorByIDQuery = `SELECT id, gateway_id, sensor_id, type, min_range, max_range, algorithm, created_at FROM sensors WHERE id = ?`
 const gatewayNotFoundFormat = "gateway with ID %d not found"
 
 type SQLiteGatewayStore struct {
