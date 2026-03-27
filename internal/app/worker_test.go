@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -185,14 +186,12 @@ func TestWorker_FirmwarePushCommand_UpdatesStore(t *testing.T) {
 
 	//Sends firmware command directyly on the subscription's channel (bypass NATS).
 	sub := d.connector.Subscription
+	fwPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "2.5.0", DownloadURL: "https://example.com/fw.bin"})
 	sub.Ch <- domain.IncomingCommand{
 		CommandID: "fw-cmd-1",
 		Type:      domain.FirmwarePush,
-		FirmwarePayload: &domain.CommandFirmwarePayload{
-			FirmwareVersion: "2.5.0",
-			DownloadURL:     "https://example.com/fw.bin",
-		},
-		IssuedAt: d.clock.Now(),
+		Payload:   fwPayload,
+		IssuedAt:  d.clock.Now(),
 	}
 
 	ok := waitFor(t, time.Second, func() bool {
@@ -214,13 +213,12 @@ func TestWorker_ConfigCommand_ChangesFrequency(t *testing.T) {
 
 	freq := 300
 	sub := d.connector.Subscription
+	cfgPayload, _ := json.Marshal(domain.CommandConfigPayload{SendFrequencyMs: &freq})
 	sub.Ch <- domain.IncomingCommand{
 		CommandID: "cfg-cmd-1",
 		Type:      domain.ConfigUpdate,
-		ConfigPayload: &domain.CommandConfigPayload{
-			SendFrequencyMs: &freq,
-		},
-		IssuedAt: d.clock.Now(),
+		Payload:   cfgPayload,
+		IssuedAt:  d.clock.Now(),
 	}
 	//Wait for the worker to process the command. (at least 2 ticks).
 	time.Sleep(200 * time.Millisecond)
@@ -328,7 +326,7 @@ func TestWorker_AnomalyExpiry_Disconnect_ReconnectsAfterDuration(t *testing.T) {
 	})
 
 	ok := waitFor(t, 2*time.Second, func() bool {
-		return d.connector.Publisher.ReconnectCalls > 0
+		return d.connector.Publisher.ReconnectCount() > 0
 	})
 	if !ok {
 		t.Error("reconnect was not called after the disconnect anomaly period expired.")
@@ -346,13 +344,12 @@ func TestWorker_HandleIncomingCommand_ExpiredCommand_StabilityCheck(t *testing.T
 	}
 
 	// Send an outdated command to ensure the worker remains stable.
+	expiredPayload, _ := json.Marshal(domain.CommandConfigPayload{SendFrequencyMs: func() *int { v := 500; return &v }()})
 	d.connector.Subscription.Ch <- domain.IncomingCommand{
 		CommandID: "expired-test-id",
 		Type:      domain.ConfigUpdate,
-		ConfigPayload: &domain.CommandConfigPayload{
-			SendFrequencyMs: func() *int { v := 500; return &v }(),
-		},
-		IssuedAt: d.clock.Now().Add(-120 * time.Second),
+		Payload:   expiredPayload,
+		IssuedAt:  d.clock.Now().Add(-120 * time.Second),
 	}
 
 	// The worker should still process the command and generate a response.
@@ -377,14 +374,12 @@ func TestWorker_FirmwareCommand_StoreUpdateFails_SendsNACK(t *testing.T) {
 
 	d.store.ErrUpdateFirmwareVersion = fakes.ErrSimulated
 
+	failPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "3.0.0", DownloadURL: "https://example.com/fw.bin"})
 	d.connector.Subscription.Ch <- domain.IncomingCommand{
 		CommandID: "fw-cmd-fail",
 		Type:      domain.FirmwarePush,
-		FirmwarePayload: &domain.CommandFirmwarePayload{
-			FirmwareVersion: "3.0.0",
-			DownloadURL:     "https://example.com/fw.bin",
-		},
-		IssuedAt: d.clock.Now(),
+		Payload:   failPayload,
+		IssuedAt:  d.clock.Now(),
 	}
 	time.Sleep(200 * time.Millisecond)
 }
@@ -412,17 +407,15 @@ func TestWorker_DrainControlChannels_AllFour(t *testing.T) {
 
 	// 3. outlierCh.
 	val := 1200.0
-	_ = reg.InjectSensorOutlier(context.Background(), gw.ManagementGatewayID, domain.SensorOutlierCommand{
-		SensorID: sensor.SensorID,
-		Value:    &val,
-	})
+	_ = reg.InjectSensorOutlier(context.Background(), sensor.ID, &val)
 
 	// 4. commandCh (via subscription).
+	drainPayload, _ := json.Marshal(domain.CommandConfigPayload{})
 	d.connector.Subscription.Ch <- domain.IncomingCommand{
-		CommandID:     "drain-test-cmd",
-		Type:          domain.ConfigUpdate,
-		ConfigPayload: &domain.CommandConfigPayload{},
-		IssuedAt:      d.clock.Now(),
+		CommandID: "drain-test-cmd",
+		Type:      domain.ConfigUpdate,
+		Payload:   drainPayload,
+		IssuedAt:  d.clock.Now(),
 	}
 
 	time.Sleep(500 * time.Millisecond)

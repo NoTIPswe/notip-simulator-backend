@@ -68,8 +68,14 @@ func (s *NATSGatewaySubscriber) handleMsg(msg *nats.Msg) {
 			Status:    domain.Expired,
 			Timestamp: s.clock.Now(),
 		}
-		ackBytes, _ := json.Marshal(ack)
-		_ = s.publisher.Publish(context.Background(), s.ackSubject, ackBytes)
+		ackBytes, err := json.Marshal(ack)
+		if err != nil {
+			slog.Error("failed to marshal expired command ACK", "commandID", cmd.CommandID, "err", err)
+		} else {
+			pubCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.publisher.Publish(pubCtx, s.ackSubject, ackBytes)
+		}
 
 		_ = msg.Ack()
 		return

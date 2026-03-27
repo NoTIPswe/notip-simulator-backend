@@ -64,7 +64,7 @@ func newIntegrationEnv(t *testing.T) *testEnv {
 	// Mirror the route table from NewHTTPServer exactly so we exercise the real handler/registry integration without binding a TCP port.
 	gwHandler := httpadapter.NewGatewayHandler(registry, registry)
 	sensorHandler := httpadapter.NewSensorHandler(registry)
-	anomalyHandler := httpadapter.NewAnomalyHandler(registry, store)
+	anomalyHandler := httpadapter.NewAnomalyHandler(registry)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /sim/gateways", gwHandler.Create)
@@ -351,8 +351,8 @@ func TestIntegration_StopGateway_NotFound(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected 500 for unknown gateway, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 for unknown gateway, got %d", resp.StatusCode)
 	}
 }
 
@@ -385,8 +385,8 @@ func TestIntegration_StartGateway_NotFound(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected 500 for unknown gateway, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404 for unknown gateway, got %d", resp.StatusCode)
 	}
 }
 
@@ -438,8 +438,8 @@ func TestIntegration_DecommissionGateway_NotFound(t *testing.T) {
 	}
 	_ = resp.Body.Close()
 
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 }
 
@@ -513,8 +513,8 @@ func TestIntegration_UpdateConfig_NotFound(t *testing.T) {
 	)
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 }
 
@@ -575,8 +575,8 @@ func TestIntegration_InjectNetworkDegradation_NotFound(t *testing.T) {
 
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 }
 

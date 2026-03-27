@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"strconv"
 )
@@ -67,6 +68,7 @@ func getEnvInt(key string, fallback int) int {
 	}
 	i, err := strconv.Atoi(v)
 	if err != nil {
+		slog.Warn("invalid value for env var, using fallback", "key", key, "value", v, "fallback", fallback)
 		return fallback
 	}
 	return i
@@ -77,9 +79,10 @@ func getEnvBool(key string, fallback bool) bool {
 	if v == "" {
 		return fallback
 	}
-	i, err := strconv.ParseBool(v)
+	b, err := strconv.ParseBool(v)
 	if err != nil {
+		slog.Warn("invalid value for env var, using fallback", "key", key, "value", v, "fallback", fallback)
 		return fallback
 	}
-	return i
+	return b
 }

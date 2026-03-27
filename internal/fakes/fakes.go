@@ -100,6 +100,12 @@ func (p *FakePublisher) Count() int {
 	return len(p.Messages)
 }
 
+func (p *FakePublisher) ReconnectCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.ReconnectCalls
+}
+
 func (p *FakePublisher) IsClosed() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -172,7 +178,7 @@ type FakeGatewayStore struct {
 	nextGwID int64
 	nextSnID int64
 
-	// Errori granulari per simulare fallimenti specifici
+	// Granular errors for simulating specific failures.
 	ErrCreateGateway            error
 	ErrGetGateway               error
 	ErrGetGatewayByManagementID error
@@ -220,7 +226,8 @@ func (s *FakeGatewayStore) GetGateway(_ context.Context, id int64) (*domain.SimG
 	if !ok {
 		return nil, fmt.Errorf(GatewaynotFound, id)
 	}
-	return gw, nil
+	cp := *gw
+	return &cp, nil
 }
 
 func (s *FakeGatewayStore) GetGatewayByManagementID(_ context.Context, managementID uuid.UUID) (*domain.SimGateway, error) {
@@ -231,7 +238,8 @@ func (s *FakeGatewayStore) GetGatewayByManagementID(_ context.Context, managemen
 	defer s.mu.RUnlock()
 	for _, gw := range s.gateways {
 		if gw.ManagementGatewayID == managementID {
-			return gw, nil
+			cp := *gw
+			return &cp, nil
 		}
 	}
 	return nil, fmt.Errorf("gateway with mgmt ID %s not found", managementID)
@@ -468,7 +476,7 @@ func (f *FakeSensorManagementService) ListSensors(ctx context.Context, gatewayID
 	if f.ListSensorsFn != nil {
 		return f.ListSensorsFn(ctx, gatewayID)
 	}
-	return nil, nil
+	return make([]*domain.SimSensor, 0), nil
 }
 
 func (f *FakeSensorManagementService) DeleteSensor(ctx context.Context, sensorID int64) error {
@@ -482,7 +490,7 @@ func (f *FakeSensorManagementService) DeleteSensor(ctx context.Context, sensorID
 type FakeSimulatorControlService struct {
 	UpdateConfigFn         func(ctx context.Context, managementID uuid.UUID, update domain.GatewayConfigUpdate) error
 	InjectGatewayAnomalyFn func(ctx context.Context, managementID uuid.UUID, cmd domain.GatewayAnomalyCommand) error
-	InjectSensorOutlierFn  func(ctx context.Context, managementID uuid.UUID, cmd domain.SensorOutlierCommand) error
+	InjectSensorOutlierFn  func(ctx context.Context, sensorID int64, value *float64) error
 }
 
 func (f *FakeSimulatorControlService) UpdateConfig(ctx context.Context, managementID uuid.UUID, update domain.GatewayConfigUpdate) error {
@@ -499,9 +507,9 @@ func (f *FakeSimulatorControlService) InjectGatewayAnomaly(ctx context.Context, 
 	return nil
 }
 
-func (f *FakeSimulatorControlService) InjectSensorOutlier(ctx context.Context, managementID uuid.UUID, cmd domain.SensorOutlierCommand) error {
+func (f *FakeSimulatorControlService) InjectSensorOutlier(ctx context.Context, sensorID int64, value *float64) error {
 	if f.InjectSensorOutlierFn != nil {
-		return f.InjectSensorOutlierFn(ctx, managementID, cmd)
+		return f.InjectSensorOutlierFn(ctx, sensorID, value)
 	}
 	return nil
 }

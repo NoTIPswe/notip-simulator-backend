@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -28,7 +29,7 @@ type ProvisioningServiceClient struct {
 func NewProvisioningServiceClient(baseURL string) *ProvisioningServiceClient {
 	return &ProvisioningServiceClient{
 		BaseURL:    baseURL,
-		HTTPClient: &http.Client{},
+		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 	}
 }
 

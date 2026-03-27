@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -24,7 +25,7 @@ func NewEncryptionKey(key []byte) (EncryptionKey, error) {
 // Bytes returns the raw byte slice of the key. This is the only way to access the key material. Used exculisively by AESGCMEncryptor.
 func (k EncryptionKey) Bytes() []byte {
 	b := make([]byte, len(k.value))
-	copy(b, k.value[:])
+	copy(b, k.value)
 	return b
 }
 
@@ -47,37 +48,37 @@ type TelemetryEnvelope struct {
 	AuthTag       string    `json:"authTag"`
 }
 
-// Command object for creating a new virtual gateway.
+// CreateGatewayRequest is the application-layer command for creating a gateway.
+// JSON tags reflect the camelCase contract used by HTTP clients.
 type CreateGatewayRequest struct {
-	Name            string
-	TenantID        string
-	FactoryID       string
-	FactoryKey      string
-	SerialNumber    string
-	Model           string
-	FirmwareVersion string
-	SendFrequencyMs int
+	Name            string `json:"name"`
+	TenantID        string `json:"tenantId"`
+	FactoryID       string `json:"factoryId"`
+	FactoryKey      string `json:"factoryKey"`
+	SerialNumber    string `json:"serialNumber"`
+	Model           string `json:"model"`
+	FirmwareVersion string `json:"firmwareVersion"`
+	SendFrequencyMs int    `json:"sendFrequencyMs"`
 }
 
-// Command object for load-test batch creation.
+// BulkCreateRequest is the application-layer command for batch gateway creation.
 type BulkCreateRequest struct {
-	Count           int
-	TenantID        string
-	FactoryID       string
-	FactoryKey      string
-	Model           string
-	FirmwareVersion string
-	SendFrequencyMs int
+	Count           int    `json:"count"`
+	TenantID        string `json:"tenantId"`
+	FactoryID       string `json:"factoryId"`
+	FactoryKey      string `json:"factoryKey"`
+	Model           string `json:"model"`
+	FirmwareVersion string `json:"firmwareVersion"`
+	SendFrequencyMs int    `json:"sendFrequencyMs"`
 }
 
-// The result of a successful provisioning bootstrap.
 type ProvisionResult struct {
 	CertPEM       []byte
 	PrivateKeyPEM []byte
 	AESKey        EncryptionKey
 }
 
-//Enums.
+// Enums.
 
 type GatewayStatus string
 
@@ -107,7 +108,7 @@ const (
 	Constant      GenerationAlgorithmType = "constant"
 )
 
-// The primary entity. Owns the complete lifecycle state of one virtual gateway.
+// SimGateway is the core domain entity. No JSON tags — use the HTTP DTO layer for serialization.
 type SimGateway struct {
 	ID                  int64
 	ManagementGatewayID uuid.UUID
@@ -126,8 +127,7 @@ type SimGateway struct {
 	CreatedAt           time.Time
 }
 
-// One sensor profile attached to a virtual gateway.
-// Controls what synthetic data the worker generates.
+// SimSensor is the sensor domain entity. No JSON tags.
 type SimSensor struct {
 	ID        int64
 	GatewayID int64
@@ -139,12 +139,13 @@ type SimSensor struct {
 	CreatedAt time.Time
 }
 
+// GatewayConfigUpdate carries live configuration changes from NATS commands or HTTP PATCH.
 type GatewayConfigUpdate struct {
-	SendFrequencyMs *int
-	Status          *GatewayStatus
+	SendFrequencyMs *int           `json:"sendFrequencyMs,omitempty"`
+	Status          *GatewayStatus `json:"status,omitempty"`
 }
 
-//Anomaly domain types.
+// Anomaly domain types.
 
 type AnomalyType string
 
@@ -162,7 +163,7 @@ type DisconnectParams struct {
 	DurationSeconds int
 }
 
-//Commands
+// Commands.
 
 type CommandType string
 
@@ -180,24 +181,24 @@ const (
 )
 
 type CommandConfigPayload struct {
-	SendFrequencyMs *int           `json:"send_frequency_ms,omitempty"`
+	SendFrequencyMs *int           `json:"sendFrequencyMs,omitempty"`
 	Status          *GatewayStatus `json:"status,omitempty"`
 }
 
 type CommandFirmwarePayload struct {
-	FirmwareVersion string `json:"firmware_version"`
-	DownloadURL     string `json:"download_url"`
+	FirmwareVersion string `json:"firmwareVersion"`
+	DownloadURL     string `json:"downloadUrl"`
 }
 
+// IncomingCommand is deserialized from NATS JetStream messages.
+// Payload is a raw JSON object; the worker decodes it based on Type.
 type IncomingCommand struct {
-	CommandID       string
-	Type            CommandType
-	ConfigPayload   *CommandConfigPayload
-	FirmwarePayload *CommandFirmwarePayload
-	IssuedAt        time.Time
+	CommandID string          `json:"commandId"`
+	Type      CommandType     `json:"type"`
+	Payload   json.RawMessage `json:"payload"`
+	IssuedAt  time.Time       `json:"issuedAt"`
 }
 
-// CommandACK.
 type CommandACK struct {
 	CommandID string           `json:"commandId"`
 	Status    CommandACKStatus `json:"status"`
@@ -205,15 +206,12 @@ type CommandACK struct {
 	Timestamp time.Time        `json:"timestamp"`
 }
 
-// Dispatched to a running GatewayWorker via its anomalyCh.
-// Exactly one of the params fields is non-nil, determined by Type.
 type GatewayAnomalyCommand struct {
 	Type               AnomalyType
 	NetworkDegradation *NetworkDegradationParams
 	Disconnect         *DisconnectParams
 }
 
-// Primes a one-shot override on the generator for the specified sensor.
 type SensorOutlierCommand struct {
 	SensorID uuid.UUID
 	Value    *float64

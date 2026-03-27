@@ -32,7 +32,8 @@ type SensorManagementService interface {
 type SimulatorControlService interface {
 	UpdateConfig(ctx context.Context, managementID uuid.UUID, update domain.GatewayConfigUpdate) error
 	InjectGatewayAnomaly(ctx context.Context, managementID uuid.UUID, cmd domain.GatewayAnomalyCommand) error
-	InjectSensorOutlier(ctx context.Context, managementID uuid.UUID, cmd domain.SensorOutlierCommand) error
+	// InjectSensorOutlier resolves sensor→gateway internally; the adapter only provides the store ID.
+	InjectSensorOutlier(ctx context.Context, sensorID int64, value *float64) error
 }
 
 type DecommissionEventReceiver interface {

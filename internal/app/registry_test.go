@@ -500,10 +500,7 @@ func TestInjectSensorOutlier_Success(t *testing.T) {
 	})
 
 	val := 9999.9
-	err := reg.InjectSensorOutlier(context.Background(), gw.ManagementGatewayID, domain.SensorOutlierCommand{
-		SensorID: sensor.SensorID,
-		Value:    &val,
-	})
+	err := reg.InjectSensorOutlier(context.Background(), sensor.ID, &val)
 	if err != nil {
 		t.Fatalf(unexpected_error, err)
 	}
@@ -515,10 +512,8 @@ func TestInjectSensorOutlier_SensorNotInWorker(t *testing.T) {
 	reg := newTestRegistry(d)
 	defer reg.StopAll(2 * time.Second)
 
-	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	err := reg.InjectSensorOutlier(context.Background(), gw.ManagementGatewayID, domain.SensorOutlierCommand{
-		SensorID: uuid.New(), // non-existing sensor in the worker.
-	})
+	_, _ = reg.CreateAndStart(context.Background(), makeCreateReq())
+	err := reg.InjectSensorOutlier(context.Background(), 99999, nil) // non-existing sensor ID.
 	if err == nil {
 		t.Fatal("expected error for sensor not in worker")
 	}
@@ -526,9 +521,7 @@ func TestInjectSensorOutlier_SensorNotInWorker(t *testing.T) {
 
 func TestInjectSensorOutlier_WorkerNotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
-	err := reg.InjectSensorOutlier(context.Background(), uuid.New(), domain.SensorOutlierCommand{
-		SensorID: uuid.New(),
-	})
+	err := reg.InjectSensorOutlier(context.Background(), 99999, nil) // non-existing sensor ID.
 	if err == nil {
 		t.Fatal("expected error for unknown worker")
 	}
@@ -823,10 +816,7 @@ func TestInjectSensorOutlier_NilValue_UsesDefault(t *testing.T) {
 	})
 
 	// When Value is nil, the generator logic should apply its default spike behavior.
-	err := reg.InjectSensorOutlier(context.Background(), gw.ManagementGatewayID, domain.SensorOutlierCommand{
-		SensorID: sensor.SensorID,
-		Value:    nil,
-	})
+	err := reg.InjectSensorOutlier(context.Background(), sensor.ID, nil)
 
 	if err != nil {
 		t.Fatalf("unexpected failure when injecting outlier with nil value: %v.", err)

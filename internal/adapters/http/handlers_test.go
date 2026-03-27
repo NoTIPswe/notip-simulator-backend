@@ -298,9 +298,8 @@ func TestAnomalyHandler_NetworkDegradation_204(t *testing.T) {
 			return nil
 		},
 	}
-	store := fakes.NewFakeGatewayStore()
 
-	h := simhttp.NewAnomalyHandler(ctrl, store)
+	h := simhttp.NewAnomalyHandler(ctrl)
 
 	w := serveWithMux("POST /sim/gateways/{id}/anomaly/network-degradation", h.InjectNetworkDegradation,
 		newReq(http.MethodPost, simHelper2+id.String()+"/anomaly/network-degradation",
@@ -317,9 +316,7 @@ func TestAnomalyHandler_Disconnect_204(t *testing.T) {
 			return nil
 		},
 	}
-	store := fakes.NewFakeGatewayStore()
-
-	h := simhttp.NewAnomalyHandler(ctrl, store)
+	h := simhttp.NewAnomalyHandler(ctrl)
 
 	w := serveWithMux("POST /sim/gateways/{id}/anomaly/disconnect", h.InjectDisconnect,
 		newReq(http.MethodPost, simHelper2+id.String()+"/anomaly/disconnect",
@@ -331,23 +328,15 @@ func TestAnomalyHandler_Disconnect_204(t *testing.T) {
 
 func TestAnomalyHandler_Outlier_204(t *testing.T) {
 	ctrl := &fakes.FakeSimulatorControlService{
-		InjectSensorOutlierFn: func(_ context.Context, _ uuid.UUID, _ domain.SensorOutlierCommand) error {
+		InjectSensorOutlierFn: func(_ context.Context, _ int64, _ *float64) error {
 			return nil
 		},
 	}
-	store := fakes.NewFakeGatewayStore()
-
-	gw := domain.SimGateway{ManagementGatewayID: uuid.New()}
-	gwID, _ := store.CreateGateway(context.Background(), gw)
-
-	sensor := domain.SimSensor{ID: 3, GatewayID: gwID, SensorID: uuid.New()}
-	createdSensorID, _ := store.CreateSensor(context.Background(), sensor)
-	h := simhttp.NewAnomalyHandler(ctrl, store)
+	h := simhttp.NewAnomalyHandler(ctrl)
 
 	val := 999.9
-	url := "/sim/sensors/" + strconv.FormatInt(createdSensorID, 10) + "/anomaly/outlier"
 	w := serveWithMux("POST /sim/sensors/{sensorId}/anomaly/outlier", h.InjectOutlier,
-		newReq(http.MethodPost, url,
+		newReq(http.MethodPost, "/sim/sensors/3/anomaly/outlier",
 			jsonBody(t, map[string]any{"value": val})))
 	if w.Code != http.StatusNoContent {
 		t.Errorf(Helper204, w.Code)
@@ -355,7 +344,7 @@ func TestAnomalyHandler_Outlier_204(t *testing.T) {
 }
 
 func TestAnomalyHandler_Outlier_InvalidSensorID_400(t *testing.T) {
-	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{}, &fakes.FakeGatewayStore{})
+	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{})
 
 	w := serveWithMux("POST /sim/sensors/{sensorId}/anomaly/outlier", h.InjectOutlier,
 		newReq(http.MethodPost, "/sim/sensors/not-a-number/anomaly/outlier", nil))
@@ -372,8 +361,7 @@ func TestAnomalyHandler_ServiceError_ReturnsError(t *testing.T) {
 		},
 	}
 
-	store := fakes.NewFakeGatewayStore()
-	h := simhttp.NewAnomalyHandler(ctrl, store)
+	h := simhttp.NewAnomalyHandler(ctrl)
 
 	w := serveWithMux("POST /sim/gateways/{id}/anomaly/disconnect", h.InjectDisconnect,
 		newReq(http.MethodPost, simHelper2+id.String()+"/anomaly/disconnect",
@@ -546,7 +534,7 @@ func TestGatewayHandler_Get_ServiceError_404(t *testing.T) {
 	id := uuid.New()
 	lc := &fakes.FakeGatewayLifecycleService{
 		GetGatewayFn: func(_ context.Context, _ uuid.UUID) (*domain.SimGateway, error) {
-			return nil, fakes.ErrSimulated
+			return nil, domain.ErrGatewayNotFound
 		},
 	}
 	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
@@ -684,7 +672,7 @@ func TestSensorHandler_Delete_InvalidSensorID_400(t *testing.T) {
 
 // AnomalyHandler missing branches.
 func TestAnomalyHandler_NetworkDegradation_InvalidUUID_400(t *testing.T) {
-	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{}, fakes.NewFakeGatewayStore())
+	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{})
 	w := serveWithMux("POST /sim/gateways/{id}/anomaly/network-degradation", h.InjectNetworkDegradation,
 		newReq(http.MethodPost, "/sim/gateways/not-a-uuid/anomaly/network-degradation",
 			jsonBody(t, map[string]any{})))
@@ -695,7 +683,7 @@ func TestAnomalyHandler_NetworkDegradation_InvalidUUID_400(t *testing.T) {
 
 func TestAnomalyHandler_NetworkDegradation_BadBody_400(t *testing.T) {
 	id := uuid.New()
-	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{}, fakes.NewFakeGatewayStore())
+	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{})
 	w := serveWithMux("POST /sim/gateways/{id}/anomaly/network-degradation", h.InjectNetworkDegradation,
 		newReq(http.MethodPost, simHelper2+id.String()+"/anomaly/network-degradation",
 			bytes.NewReader([]byte("not-json"))))
@@ -713,7 +701,7 @@ func TestAnomalyHandler_NetworkDegradation_DefaultPacketLoss(t *testing.T) {
 			return nil
 		},
 	}
-	h := simhttp.NewAnomalyHandler(ctrl, fakes.NewFakeGatewayStore())
+	h := simhttp.NewAnomalyHandler(ctrl)
 	w := serveWithMux("POST /sim/gateways/{id}/anomaly/network-degradation", h.InjectNetworkDegradation,
 		newReq(http.MethodPost, simHelper2+id.String()+"/anomaly/network-degradation",
 			jsonBody(t, map[string]any{"duration_seconds": 5})))
@@ -726,7 +714,7 @@ func TestAnomalyHandler_NetworkDegradation_DefaultPacketLoss(t *testing.T) {
 }
 
 func TestAnomalyHandler_Disconnect_InvalidUUID_400(t *testing.T) {
-	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{}, fakes.NewFakeGatewayStore())
+	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{})
 	w := serveWithMux("POST /sim/gateways/{id}/anomaly/disconnect", h.InjectDisconnect,
 		newReq(http.MethodPost, "/sim/gateways/not-a-uuid/anomaly/disconnect",
 			jsonBody(t, map[string]any{"duration_seconds": 1})))
@@ -737,7 +725,7 @@ func TestAnomalyHandler_Disconnect_InvalidUUID_400(t *testing.T) {
 
 func TestAnomalyHandler_Disconnect_BadBody_400(t *testing.T) {
 	id := uuid.New()
-	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{}, fakes.NewFakeGatewayStore())
+	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{})
 	w := serveWithMux("POST /sim/gateways/{id}/anomaly/disconnect", h.InjectDisconnect,
 		newReq(http.MethodPost, simHelper2+id.String()+"/anomaly/disconnect",
 			bytes.NewReader([]byte("not-json"))))
@@ -748,7 +736,7 @@ func TestAnomalyHandler_Disconnect_BadBody_400(t *testing.T) {
 
 func TestAnomalyHandler_Disconnect_ZeroDuration_400(t *testing.T) {
 	id := uuid.New()
-	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{}, fakes.NewFakeGatewayStore())
+	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{})
 	w := serveWithMux("POST /sim/gateways/{id}/anomaly/disconnect", h.InjectDisconnect,
 		newReq(http.MethodPost, simHelper2+id.String()+"/anomaly/disconnect",
 			jsonBody(t, map[string]any{"duration_seconds": 0})))
@@ -758,9 +746,12 @@ func TestAnomalyHandler_Disconnect_ZeroDuration_400(t *testing.T) {
 }
 
 func TestAnomalyHandler_Outlier_SensorNotFound_404(t *testing.T) {
-	store := fakes.NewFakeGatewayStore()
-	store.ErrGetSensor = fakes.ErrSimulated
-	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{}, store)
+	ctrl := &fakes.FakeSimulatorControlService{
+		InjectSensorOutlierFn: func(_ context.Context, _ int64, _ *float64) error {
+			return domain.ErrSensorNotFound
+		},
+	}
+	h := simhttp.NewAnomalyHandler(ctrl)
 
 	w := serveWithMux("POST /sim/sensors/{sensorId}/anomaly/outlier", h.InjectOutlier,
 		newReq(http.MethodPost, "/sim/sensors/99/anomaly/outlier",
@@ -770,56 +761,44 @@ func TestAnomalyHandler_Outlier_SensorNotFound_404(t *testing.T) {
 	}
 }
 
-func TestAnomalyHandler_Outlier_GatewayNotFound_500(t *testing.T) {
-	store := fakes.NewFakeGatewayStore()
-	store.ErrGetGateway = fakes.ErrSimulated
+func TestAnomalyHandler_Outlier_GatewayNotFound_404(t *testing.T) {
+	ctrl := &fakes.FakeSimulatorControlService{
+		InjectSensorOutlierFn: func(_ context.Context, _ int64, _ *float64) error {
+			return domain.ErrGatewayNotFound
+		},
+	}
+	h := simhttp.NewAnomalyHandler(ctrl)
 
-	gw := domain.SimGateway{ManagementGatewayID: uuid.New()}
-	gwID, _ := store.CreateGateway(context.Background(), gw)
-	sensor := domain.SimSensor{GatewayID: gwID, SensorID: uuid.New()}
-	sensorID, _ := store.CreateSensor(context.Background(), sensor)
-
-	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{}, store)
-	url := "/sim/sensors/" + strconv.FormatInt(sensorID, 10) + "/anomaly/outlier"
 	w := serveWithMux("POST /sim/sensors/{sensorId}/anomaly/outlier", h.InjectOutlier,
-		newReq(http.MethodPost, url, jsonBody(t, map[string]any{})))
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("want 500 for missing gateway, got %d", w.Code)
+		newReq(http.MethodPost, "/sim/sensors/5/anomaly/outlier",
+			jsonBody(t, map[string]any{})))
+	if w.Code != http.StatusNotFound {
+		t.Errorf("want 404 for missing gateway, got %d", w.Code)
 	}
 }
 
 func TestAnomalyHandler_Outlier_ServiceError_500(t *testing.T) {
 	ctrl := &fakes.FakeSimulatorControlService{
-		InjectSensorOutlierFn: func(_ context.Context, _ uuid.UUID, _ domain.SensorOutlierCommand) error {
+		InjectSensorOutlierFn: func(_ context.Context, _ int64, _ *float64) error {
 			return fakes.ErrSimulated
 		},
 	}
-	store := fakes.NewFakeGatewayStore()
-	gw := domain.SimGateway{ManagementGatewayID: uuid.New()}
-	gwID, _ := store.CreateGateway(context.Background(), gw)
-	sensor := domain.SimSensor{GatewayID: gwID, SensorID: uuid.New()}
-	sensorID, _ := store.CreateSensor(context.Background(), sensor)
+	h := simhttp.NewAnomalyHandler(ctrl)
 
-	h := simhttp.NewAnomalyHandler(ctrl, store)
-	url := "/sim/sensors/" + strconv.FormatInt(sensorID, 10) + "/anomaly/outlier"
 	w := serveWithMux("POST /sim/sensors/{sensorId}/anomaly/outlier", h.InjectOutlier,
-		newReq(http.MethodPost, url, jsonBody(t, map[string]any{})))
+		newReq(http.MethodPost, "/sim/sensors/5/anomaly/outlier",
+			jsonBody(t, map[string]any{})))
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("want 500 on service error, got %d", w.Code)
 	}
 }
 
 func TestAnomalyHandler_Outlier_BadBody_400(t *testing.T) {
-	store := fakes.NewFakeGatewayStore()
-	gw := domain.SimGateway{ManagementGatewayID: uuid.New()}
-	gwID, _ := store.CreateGateway(context.Background(), gw)
-	sensor := domain.SimSensor{GatewayID: gwID, SensorID: uuid.New()}
-	sensorID, _ := store.CreateSensor(context.Background(), sensor)
+	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{})
 
-	h := simhttp.NewAnomalyHandler(&fakes.FakeSimulatorControlService{}, store)
-	url := "/sim/sensors/" + strconv.FormatInt(sensorID, 10) + "/anomaly/outlier"
 	w := serveWithMux("POST /sim/sensors/{sensorId}/anomaly/outlier", h.InjectOutlier,
-		newReq(http.MethodPost, url, bytes.NewReader([]byte("not-json"))))
+		newReq(http.MethodPost, "/sim/sensors/5/anomaly/outlier",
+			bytes.NewReader([]byte("not-json"))))
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("want 400 for bad body, got %d", w.Code)
 	}

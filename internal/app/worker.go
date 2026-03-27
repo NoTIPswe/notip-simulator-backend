@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -136,17 +136,38 @@ func (w *GatewayWorker) IsRunning() bool {
 func (w *GatewayWorker) sensorLoop(ctx context.Context) {
 	defer close(w.done)
 
-	freq := time.Duration(w.gateway.SendFrequencyMs) * time.Millisecond
-	ticker := time.NewTicker(freq)
-	defer ticker.Stop()
+	var ticker *time.Ticker
+	var tickC <-chan time.Time                 // nil = never fires in select
+	var cfgC <-chan domain.GatewayConfigUpdate // non-nil only while freq=0
+
+	if w.gateway.SendFrequencyMs > 0 {
+		ticker = time.NewTicker(time.Duration(w.gateway.SendFrequencyMs) * time.Millisecond)
+		tickC = ticker.C
+	} else {
+		cfgC = w.configCh // no ticker yet: consume config directly to start it
+	}
+	defer func() {
+		if ticker != nil {
+			ticker.Stop()
+		}
+	}()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case cfg := <-cfgC:
+			// Only reachable when freq=0. Start the ticker and hand config
+			// drain back to drainControlChannels (preserves backpressure).
+			if cfg.SendFrequencyMs != nil && *cfg.SendFrequencyMs > 0 {
+				w.gateway.SendFrequencyMs = *cfg.SendFrequencyMs
+				ticker = time.NewTicker(time.Duration(w.gateway.SendFrequencyMs) * time.Millisecond)
+				tickC = ticker.C
+				cfgC = nil
+			}
 		case cmd := <-w.commandCh:
 			w.handleIncomingCommand(ctx, cmd)
-		case <-ticker.C:
+		case <-tickC:
 			w.processTick(ctx, ticker)
 		}
 	}
@@ -159,7 +180,6 @@ func (w *GatewayWorker) processTick(ctx context.Context, ticker *time.Ticker) {
 }
 
 func (w *GatewayWorker) drainControlChannels(ticker *time.Ticker) {
-	// Check for config updates.
 	select {
 	case cfg := <-w.configCh:
 		if cfg.SendFrequencyMs != nil {
@@ -169,14 +189,12 @@ func (w *GatewayWorker) drainControlChannels(ticker *time.Ticker) {
 	default:
 	}
 
-	// Check for anomalies.
 	select {
 	case cmd := <-w.anomalyCh:
 		w.handleAnomalyCommand(cmd)
 	default:
 	}
 
-	// Check for outliers.
 drainOutliers:
 	for {
 		select {
@@ -208,7 +226,6 @@ func (w *GatewayWorker) checkAnomalyExpiry(ctx context.Context) {
 		return
 	}
 
-	// If the current time is still before the expiration, we do not clear the anomaly.
 	if w.clock.Now().Before(w.activeAnomaly.expiresAt) {
 		return
 	}
@@ -224,7 +241,6 @@ func (w *GatewayWorker) checkAnomalyExpiry(ctx context.Context) {
 }
 
 func (w *GatewayWorker) publishSensorData() {
-	// 3. Generate and publish data.
 	if w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.Disconnect {
 		return
 	}
@@ -235,7 +251,11 @@ func (w *GatewayWorker) publishSensorData() {
 	for i, sensor := range w.sensors {
 		value := w.generators[i].Next()
 		innerData := innerSensorData{Value: value, Unit: getUnitForSensor(sensor.Type)}
-		innerBytes, _ := json.Marshal(innerData)
+		innerBytes, err := json.Marshal(innerData)
+		if err != nil {
+			slog.Error("failed to marshal sensor data", "sensorID", sensor.SensorID, "err", err)
+			continue
+		}
 
 		payload, err := w.encryptor.Encrypt(w.gateway.EncryptionKey, innerBytes)
 		if err != nil {
@@ -243,7 +263,11 @@ func (w *GatewayWorker) publishSensorData() {
 		}
 
 		envelope := w.buildEnvelope(*sensor, payload)
-		envBytes, _ := json.Marshal(envelope)
+		envBytes, err := json.Marshal(envelope)
+		if err != nil {
+			slog.Error("failed to marshal telemetry envelope", "sensorID", sensor.SensorID, "err", err)
+			continue
+		}
 
 		if w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.NetworkDegradation {
 			if rand.Float64() < w.activeAnomaly.packetLossPct {
@@ -260,7 +284,6 @@ func (w *GatewayWorker) handleAnomalyCommand(cmd domain.GatewayAnomalyCommand) {
 
 	switch cmd.Type {
 	case domain.NetworkDegradation:
-		// Ensure NetworkDegradation params exist before accessing them to prevent panics.
 		if cmd.NetworkDegradation != nil {
 			state.expiresAt = w.clock.Now().Add(time.Duration(cmd.NetworkDegradation.DurationSeconds) * time.Second)
 			loss := cmd.NetworkDegradation.PacketLossPct
@@ -271,7 +294,6 @@ func (w *GatewayWorker) handleAnomalyCommand(cmd domain.GatewayAnomalyCommand) {
 		}
 
 	case domain.Disconnect:
-		// Ensure Disconnect params exist before accessing them.
 		if cmd.Disconnect != nil {
 			state.expiresAt = w.clock.Now().Add(time.Duration(cmd.Disconnect.DurationSeconds) * time.Second)
 		}
@@ -281,7 +303,6 @@ func (w *GatewayWorker) handleAnomalyCommand(cmd domain.GatewayAnomalyCommand) {
 		}
 	}
 	w.activeAnomaly = state
-
 }
 
 func (w *GatewayWorker) buildEnvelope(sensor domain.SimSensor, payload domain.EncryptedPayload) domain.TelemetryEnvelope {
@@ -303,45 +324,48 @@ func (w *GatewayWorker) handleIncomingCommand(ctx context.Context, cmd domain.In
 
 	switch cmd.Type {
 	case domain.ConfigUpdate:
-		if cmd.ConfigPayload != nil {
-			if cmd.ConfigPayload.SendFrequencyMs != nil {
-				//Frequency persistency
-				err := w.store.UpdateFrequency(ctx, w.gateway.ID, *cmd.ConfigPayload.SendFrequencyMs)
-				if err != nil {
-					ackStatus = domain.NACK
-					msg := fmt.Sprintf("failed to update frequency in store: %v", err)
-					ackMessage = &msg
-					break // Esci dallo switch, non inviare al configCh se il DB fallisce
-				}
-			}
-
-			//Status persistency in the Store.
-			if cmd.ConfigPayload.Status != nil {
-				if err := w.store.UpdateStatus(ctx, w.gateway.ID, *cmd.ConfigPayload.Status); err != nil {
-					ackStatus = domain.NACK
-					msg := fmt.Sprintf("failed to persist status: %v", err)
-					ackMessage = &msg
-					break
-				}
-			}
-			update := domain.GatewayConfigUpdate{
-				SendFrequencyMs: cmd.ConfigPayload.SendFrequencyMs,
-				Status:          cmd.ConfigPayload.Status,
-			}
-			select {
-			case w.configCh <- update:
-				// Success.
-			default:
+		var p domain.CommandConfigPayload
+		if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+			ackStatus = domain.NACK
+			msg := fmt.Sprintf("invalid config payload: %v", err)
+			ackMessage = &msg
+			break
+		}
+		if p.SendFrequencyMs != nil {
+			if err := w.store.UpdateFrequency(ctx, w.gateway.ID, *p.SendFrequencyMs); err != nil {
 				ackStatus = domain.NACK
-				msg := "config channel full"
+				msg := fmt.Sprintf("failed to update frequency in store: %v", err)
 				ackMessage = &msg
+				break
 			}
+		}
+		if p.Status != nil {
+			if err := w.store.UpdateStatus(ctx, w.gateway.ID, *p.Status); err != nil {
+				ackStatus = domain.NACK
+				msg := fmt.Sprintf("failed to persist status: %v", err)
+				ackMessage = &msg
+				break
+			}
+		}
+		update := domain.GatewayConfigUpdate(p)
+		select {
+		case w.configCh <- update:
+		default:
+			ackStatus = domain.NACK
+			msg := "config channel full"
+			ackMessage = &msg
 		}
 
 	case domain.FirmwarePush:
-		if cmd.FirmwarePayload != nil {
-			err := w.store.UpdateFirmwareVersion(ctx, w.gateway.ID, cmd.FirmwarePayload.FirmwareVersion)
-			if err != nil {
+		var p domain.CommandFirmwarePayload
+		if err := json.Unmarshal(cmd.Payload, &p); err != nil {
+			ackStatus = domain.NACK
+			msg := fmt.Sprintf("invalid firmware payload: %v", err)
+			ackMessage = &msg
+			break
+		}
+		if p.FirmwareVersion != "" {
+			if err := w.store.UpdateFirmwareVersion(ctx, w.gateway.ID, p.FirmwareVersion); err != nil {
 				ackStatus = domain.NACK
 				msg := err.Error()
 				ackMessage = &msg
@@ -355,7 +379,6 @@ func (w *GatewayWorker) handleIncomingCommand(ctx context.Context, cmd domain.In
 	}
 
 	w.sendACK(ctx, cmd.CommandID, ackStatus, ackMessage)
-
 }
 
 func (w *GatewayWorker) sendACK(ctx context.Context, commandID string, status domain.CommandACKStatus, message *string) {
@@ -366,7 +389,11 @@ func (w *GatewayWorker) sendACK(ctx context.Context, commandID string, status do
 		Timestamp: w.clock.Now(),
 	}
 
-	payload, _ := json.Marshal(ack)
+	payload, err := json.Marshal(ack)
+	if err != nil {
+		slog.Error("failed to marshal command ACK", "commandID", commandID, "err", err)
+		return
+	}
 
 	subject := fmt.Sprintf("command.ack.%s.%s", w.gateway.TenantID, w.gateway.ManagementGatewayID.String())
 

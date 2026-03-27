@@ -1,9 +1,8 @@
 package generator
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"sync"
-	"time"
 )
 
 type SpikeGenerator struct {
@@ -11,19 +10,16 @@ type SpikeGenerator struct {
 	maxRange        float64
 	spikeFrequency  float64
 	spikeFactor     float64
-	rng             *rand.Rand
 	outlierOverride *float64
 	mu              sync.Mutex
 }
 
 func NewSpikeGenerator(min, max, freq, factor float64) *SpikeGenerator {
-	source := rand.NewSource(time.Now().UnixNano())
 	return &SpikeGenerator{
 		minRange:       min,
 		maxRange:       max,
 		spikeFrequency: freq,
 		spikeFactor:    factor,
-		rng:            rand.New(source),
 	}
 }
 
@@ -37,15 +33,15 @@ func (g *SpikeGenerator) Next() float64 {
 		return val
 	}
 
-	if g.rng.Float64() < g.spikeFrequency {
+	if rand.Float64() < g.spikeFrequency {
 		rangeSize := g.maxRange - g.minRange
-		if g.rng.Float64() < 0.5 {
+		if rand.Float64() < 0.5 {
 			return g.maxRange + rangeSize*g.spikeFactor
 		}
 		return g.minRange - rangeSize*g.spikeFactor
 	}
 
-	return g.minRange + g.rng.Float64()*(g.maxRange-g.minRange)
+	return g.minRange + rand.Float64()*(g.maxRange-g.minRange)
 }
 
 func (g *SpikeGenerator) InjectOutlier(value float64) {

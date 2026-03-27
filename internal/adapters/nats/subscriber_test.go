@@ -26,13 +26,12 @@ func newSubscriberForTest(clk *fakes.FakeClock, pub *fakes.FakePublisher) *NATSG
 }
 
 func validCmd(issuedAt time.Time) []byte {
+	payload, _ := json.Marshal(domain.CommandConfigPayload{SendFrequencyMs: intPtr(1000)})
 	cmd := domain.IncomingCommand{
 		CommandID: uuid.New().String(),
 		Type:      domain.ConfigUpdate,
 		IssuedAt:  issuedAt,
-		ConfigPayload: &domain.CommandConfigPayload{
-			SendFrequencyMs: intPtr(1000),
-		},
+		Payload:   payload,
 	}
 	b, _ := json.Marshal(cmd)
 	return b
@@ -153,14 +152,15 @@ func TestSubscriber_FirmwarePush_EnqueuedCorrectly(t *testing.T) {
 	pub := &fakes.FakePublisher{}
 	s := newSubscriberForTest(clk, pub)
 
+	payload, _ := json.Marshal(domain.CommandFirmwarePayload{
+		FirmwareVersion: "v2.0.0",
+		DownloadURL:     "http://example.com/fw.bin",
+	})
 	cmd := domain.IncomingCommand{
 		CommandID: uuid.New().String(),
 		Type:      domain.FirmwarePush,
 		IssuedAt:  clk.Now(),
-		FirmwarePayload: &domain.CommandFirmwarePayload{
-			FirmwareVersion: "v2.0.0",
-			DownloadURL:     "http://example.com/fw.bin",
-		},
+		Payload:   payload,
 	}
 	data, _ := json.Marshal(cmd)
 	msg := newFakeMsg(data)
@@ -171,11 +171,12 @@ func TestSubscriber_FirmwarePush_EnqueuedCorrectly(t *testing.T) {
 		if received.Type != domain.FirmwarePush {
 			t.Errorf("want FirmwarePush, got %v", received.Type)
 		}
-		if received.FirmwarePayload == nil {
-			t.Error("expected non-nil FirmwarePayload")
+		var fp domain.CommandFirmwarePayload
+		if err := json.Unmarshal(received.Payload, &fp); err != nil {
+			t.Fatalf("failed to unmarshal payload: %v", err)
 		}
-		if received.FirmwarePayload.FirmwareVersion != "v2.0.0" {
-			t.Errorf("want v2.0.0, got %s", received.FirmwarePayload.FirmwareVersion)
+		if fp.FirmwareVersion != "v2.0.0" {
+			t.Errorf("want v2.0.0, got %s", fp.FirmwareVersion)
 		}
 	default:
 		t.Error("expected command in channel")

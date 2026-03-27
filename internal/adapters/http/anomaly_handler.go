@@ -12,20 +12,20 @@ import (
 
 type AnomalyHandler struct {
 	control ports.SimulatorControlService
-	store   ports.GatewayStore
 }
 
-func NewAnomalyHandler(control ports.SimulatorControlService, store ports.GatewayStore) *AnomalyHandler {
-	return &AnomalyHandler{control: control, store: store}
+func NewAnomalyHandler(control ports.SimulatorControlService) *AnomalyHandler {
+	return &AnomalyHandler{control: control}
 }
 
 func (h *AnomalyHandler) InjectNetworkDegradation(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, invalidformat, http.StatusBadRequest)
+		http.Error(w, invalidGatewayIDFormat, http.StatusBadRequest)
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req struct {
 		DurationSeconds int     `json:"duration_seconds"`
 		PacketLossPct   float64 `json:"packet_loss_pct"`
@@ -48,7 +48,7 @@ func (h *AnomalyHandler) InjectNetworkDegradation(w http.ResponseWriter, r *http
 	}
 
 	if err := h.control.InjectGatewayAnomaly(r.Context(), id, cmd); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -57,10 +57,11 @@ func (h *AnomalyHandler) InjectNetworkDegradation(w http.ResponseWriter, r *http
 func (h *AnomalyHandler) InjectDisconnect(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, invalidformat, http.StatusBadRequest)
+		http.Error(w, invalidGatewayIDFormat, http.StatusBadRequest)
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req struct {
 		DurationSeconds int `json:"duration_seconds"`
 	}
@@ -82,7 +83,7 @@ func (h *AnomalyHandler) InjectDisconnect(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.control.InjectGatewayAnomaly(r.Context(), id, cmd); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -95,6 +96,7 @@ func (h *AnomalyHandler) InjectOutlier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var req struct {
 		Value *float64 `json:"value"`
 	}
@@ -103,28 +105,8 @@ func (h *AnomalyHandler) InjectOutlier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//Find the sensor via SQLite.
-	sensor, err := h.store.GetSensor(r.Context(), sensorID)
-	if err != nil {
-		http.Error(w, "sensor not found", http.StatusNotFound)
-		return
-	}
-
-	//Find the Gateway to extract the ID.
-	gw, err := h.store.GetGateway(r.Context(), sensor.GatewayID)
-	if err != nil {
-		http.Error(w, "associated gateway not found", http.StatusInternalServerError)
-		return
-	}
-
-	// Prepare the command.
-	cmd := domain.SensorOutlierCommand{
-		SensorID: sensor.SensorID,
-		Value:    req.Value, //If nil, the Worker has the default (sensor.MaxRange * 2.0).
-	}
-
-	if err := h.control.InjectSensorOutlier(r.Context(), gw.ManagementGatewayID, cmd); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := h.control.InjectSensorOutlier(r.Context(), sensorID, req.Value); err != nil {
+		writeError(w, err)
 		return
 	}
 

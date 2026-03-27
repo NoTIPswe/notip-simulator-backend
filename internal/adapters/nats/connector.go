@@ -13,21 +13,33 @@ import (
 )
 
 type NATSMTLSConnector struct {
-	natsURL    string
-	caCertPath string
-	clock      ports.Clock
+	natsURL string
+	caPool  *x509.CertPool
+	clock   ports.Clock
 }
 
-func NewNATSMTLSConnector(natsURL, caCertPath string, clock ports.Clock) *NATSMTLSConnector {
-	return &NATSMTLSConnector{
-		natsURL:    natsURL,
-		caCertPath: caCertPath,
-		clock:      clock,
+// NewNATSMTLSConnector reads and parses the CA certificate once at construction time.
+// Subsequent Connect calls reuse the cached pool — no disk I/O per connection.
+func NewNATSMTLSConnector(natsURL, caCertPath string, clock ports.Clock) (*NATSMTLSConnector, error) {
+	caCert, err := os.ReadFile(caCertPath)
+	if err != nil {
+		return nil, fmt.Errorf("read CA certificate: %w", err)
 	}
+
+	caPool := x509.NewCertPool()
+	if !caPool.AppendCertsFromPEM(caCert) {
+		return nil, fmt.Errorf("failed to parse CA certificate")
+	}
+
+	return &NATSMTLSConnector{
+		natsURL: natsURL,
+		caPool:  caPool,
+		clock:   clock,
+	}, nil
 }
 
 func (c *NATSMTLSConnector) Connect(ctx context.Context, certPEM []byte, keyPEM []byte, tenantID string, managementGatewayID uuid.UUID) (ports.GatewayPublisher, ports.CommandSubscription, error) {
-	tlsCfg, err := buildTLSConfig(c.caCertPath, certPEM, keyPEM)
+	tlsCfg, err := c.buildTLSConfig(certPEM, keyPEM)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build TLS config: %w", err)
 	}
@@ -63,18 +75,8 @@ func (c *NATSMTLSConnector) Connect(ctx context.Context, certPEM []byte, keyPEM 
 	return pub, sub, nil
 }
 
-// First it reads and parses the CA certificate, then it builds the client certificate and key, and finally it constructs a tls.Config with the appropriate settings for mutual TLS authentication.
-func buildTLSConfig(caCertPath string, certPEM, keyPEM []byte) (*tls.Config, error) {
-	caCert, err := os.ReadFile(caCertPath)
-	if err != nil {
-		return nil, fmt.Errorf("read CA certificate: %w", err)
-	}
-
-	caPool := x509.NewCertPool()
-	if !caPool.AppendCertsFromPEM(caCert) {
-		return nil, fmt.Errorf("failed to parse ca certificate")
-	}
-
+// buildTLSConfig constructs a mutual TLS config using the cached CA pool.
+func (c *NATSMTLSConnector) buildTLSConfig(certPEM, keyPEM []byte) (*tls.Config, error) {
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("parse client certificate/key: %w", err)
@@ -82,6 +84,7 @@ func buildTLSConfig(caCertPath string, certPEM, keyPEM []byte) (*tls.Config, err
 
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		RootCAs:      caPool,
+		RootCAs:      c.caPool,
+		MinVersion:   tls.VersionTLS13,
 	}, nil
 }

@@ -11,7 +11,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp" // Aggiunto per l'handler delle metriche
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/adapters"
 	httpadapter "github.com/NoTIPswe/notip-simulator-backend/internal/adapters/http"
@@ -43,10 +43,15 @@ func Run(ctx context.Context) error {
 	met := metrics.NewMetrics()
 	clock := adapters.SystemClock{}
 
+	connector, err := natsadapter.NewNATSMTLSConnector(cfg.NATSUrl, cfg.NATSCACertPath, clock)
+	if err != nil {
+		return fmt.Errorf("create NATS connector: %w", err)
+	}
+
 	registry := NewGatewayRegistry(
 		store,
 		httpadapter.NewProvisioningServiceClient(cfg.ProvisioningURL),
-		natsadapter.NewNATSMTLSConnector(cfg.NATSUrl, cfg.NATSCACertPath, clock),
+		connector,
 		adapters.AESGCMEncryptor{},
 		clock,
 		cfg,
@@ -70,12 +75,11 @@ func Run(ctx context.Context) error {
 
 	serverErr := make(chan error, 2)
 	metricsServer := startMetricsServer(cfg.MetricsAddr, serverErr)
-	apiServer := startAPIServer(cfg, registry, store, serverErr)
+	apiServer := startAPIServer(cfg, registry, serverErr)
 
 	return handleShutdown(ctx, apiServer, metricsServer, registry, serverErr)
 }
 
-// Sets up the SQLite database and runs migrations.
 func setupDatabase(ctx context.Context, path string) (*sqlite.SQLiteGatewayStore, error) {
 	store, err := sqlite.NewStore(path)
 	if err != nil {
@@ -88,7 +92,6 @@ func setupDatabase(ctx context.Context, path string) (*sqlite.SQLiteGatewayStore
 	return store, nil
 }
 
-// Configures the global NATS connection and starts the decommission listener.
 func setupDecommissionListener(ctx context.Context, cfg *config.Config, registry *GatewayRegistry) (*natsio.Conn, error) {
 	caCert, err := os.ReadFile(cfg.NATSCACertPath)
 	if err != nil {
@@ -100,7 +103,10 @@ func setupDecommissionListener(ctx context.Context, cfg *config.Config, registry
 	}
 
 	globalNats, err := natsio.Connect(cfg.NATSUrl,
-		natsio.Secure(&tls.Config{RootCAs: caPool}),
+		natsio.Secure(&tls.Config{
+			RootCAs:    caPool,
+			MinVersion: tls.VersionTLS13,
+		}),
 		natsio.MaxReconnects(-1),
 	)
 	if err != nil {
@@ -124,7 +130,6 @@ func setupDecommissionListener(ctx context.Context, cfg *config.Config, registry
 	return globalNats, nil
 }
 
-// Starts the Prometheus metrics HTTP server.
 func startMetricsServer(addr string, errCh chan<- error) *nethttp.Server {
 	mux := nethttp.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
@@ -139,11 +144,10 @@ func startMetricsServer(addr string, errCh chan<- error) *nethttp.Server {
 	return srv
 }
 
-// Wires the handlers and starts the main HTTP API server.
-func startAPIServer(cfg *config.Config, registry *GatewayRegistry, store *sqlite.SQLiteGatewayStore, errCh chan<- error) *httpadapter.HTTPServer {
+func startAPIServer(cfg *config.Config, registry *GatewayRegistry, errCh chan<- error) *httpadapter.HTTPServer {
 	gwHandler := httpadapter.NewGatewayHandler(registry, registry)
 	sensorHandler := httpadapter.NewSensorHandler(registry)
-	anomalyHandler := httpadapter.NewAnomalyHandler(registry, store)
+	anomalyHandler := httpadapter.NewAnomalyHandler(registry)
 
 	srv := httpadapter.NewHTTPServer(
 		cfg.HTTPAddr,
@@ -162,7 +166,6 @@ func startAPIServer(cfg *config.Config, registry *GatewayRegistry, store *sqlite
 	return srv
 }
 
-// Manages graceful shutdown for servers and running workers.
 func handleShutdown(ctx context.Context, apiSrv *httpadapter.HTTPServer, metSrv *nethttp.Server, registry *GatewayRegistry, errCh <-chan error) error {
 	select {
 	case err := <-errCh:
