@@ -11,7 +11,7 @@ func NewGeneratorFactory() *GeneratorFactory {
 	return &GeneratorFactory{}
 }
 
-func (f *GeneratorFactory) New(sensor *domain.SimSensor, clock ports.Clock) Generator {
+func (f *GeneratorFactory) New(sensor *domain.SimSensor, clock ports.Nower) Generator {
 	switch sensor.Algorithm {
 	case domain.Constant:
 		return NewConstantGenerator(sensor.MinRange, sensor.MaxRange)

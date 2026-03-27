@@ -524,7 +524,7 @@ type FakeDecommissionEventReceiver struct {
 	Calls []struct{ TenantID, ManagementGatewayID string }
 }
 
-func (f *FakeDecommissionEventReceiver) HandleDecommission(tenantID string, managementGatewayID string) {
+func (f *FakeDecommissionEventReceiver) HandleDecommission(tenantID, managementGatewayID string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, struct{ TenantID, ManagementGatewayID string }{TenantID: tenantID, ManagementGatewayID: managementGatewayID})

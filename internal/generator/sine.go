@@ -13,12 +13,12 @@ type SineWaveGenerator struct {
 	maxRange        float64
 	periodSeconds   float64
 	startTime       time.Time
-	clock           ports.Clock
+	clock           ports.Nower
 	outlierOverride *float64
 	mu              sync.Mutex
 }
 
-func NewSineWaveGenerator(min, max, period float64, clk ports.Clock) *SineWaveGenerator {
+func NewSineWaveGenerator(min, max, period float64, clk ports.Nower) *SineWaveGenerator {
 	if period <= 0 {
 		period = 60 // default to 60 seconds if invalid period is provided
 	}

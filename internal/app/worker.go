@@ -51,7 +51,7 @@ type GatewayWorker struct {
 	buffer     *MessageBuffer
 	publisher  ports.GatewayPublisher
 	encryptor  ports.Encryptor
-	clock      ports.Clock
+	clock      ports.Nower
 
 	cancel          context.CancelFunc
 	done            chan struct{}
@@ -72,7 +72,7 @@ type WorkerDeps struct {
 	Generators []generator.Generator
 	Publisher  ports.GatewayPublisher
 	Encryptor  ports.Encryptor
-	Clock      ports.Clock
+	Clock      ports.Nower
 	Buffer     *MessageBuffer
 	Store      ports.GatewayStore
 }
@@ -319,66 +319,67 @@ func (w *GatewayWorker) buildEnvelope(sensor domain.SimSensor, payload domain.En
 }
 
 func (w *GatewayWorker) handleIncomingCommand(ctx context.Context, cmd domain.IncomingCommand) {
-	var ackStatus = domain.ACK
-	var ackMessage *string
+	ackStatus, ackMessage := w.processIncomingCommand(ctx, cmd)
+	w.sendACK(ctx, cmd.CommandID, ackStatus, ackMessage)
+}
 
+func (w *GatewayWorker) processIncomingCommand(ctx context.Context, cmd domain.IncomingCommand) (domain.CommandACKStatus, *string) {
 	switch cmd.Type {
 	case domain.ConfigUpdate:
-		var p domain.CommandConfigPayload
-		if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-			ackStatus = domain.NACK
-			msg := fmt.Sprintf("invalid config payload: %v", err)
-			ackMessage = &msg
-			break
-		}
-		if p.SendFrequencyMs != nil {
-			if err := w.store.UpdateFrequency(ctx, w.gateway.ID, *p.SendFrequencyMs); err != nil {
-				ackStatus = domain.NACK
-				msg := fmt.Sprintf("failed to update frequency in store: %v", err)
-				ackMessage = &msg
-				break
-			}
-		}
-		if p.Status != nil {
-			if err := w.store.UpdateStatus(ctx, w.gateway.ID, *p.Status); err != nil {
-				ackStatus = domain.NACK
-				msg := fmt.Sprintf("failed to persist status: %v", err)
-				ackMessage = &msg
-				break
-			}
-		}
-		update := domain.GatewayConfigUpdate(p)
-		select {
-		case w.configCh <- update:
-		default:
-			ackStatus = domain.NACK
-			msg := "config channel full"
-			ackMessage = &msg
-		}
-
+		return w.handleConfigUpdateCommand(ctx, cmd.Payload)
 	case domain.FirmwarePush:
-		var p domain.CommandFirmwarePayload
-		if err := json.Unmarshal(cmd.Payload, &p); err != nil {
-			ackStatus = domain.NACK
-			msg := fmt.Sprintf("invalid firmware payload: %v", err)
-			ackMessage = &msg
-			break
-		}
-		if p.FirmwareVersion != "" {
-			if err := w.store.UpdateFirmwareVersion(ctx, w.gateway.ID, p.FirmwareVersion); err != nil {
-				ackStatus = domain.NACK
-				msg := err.Error()
-				ackMessage = &msg
-			}
-		}
-
+		return w.handleFirmwarePushCommand(ctx, cmd.Payload)
 	default:
-		ackStatus = domain.NACK
-		msg := "unknown command type"
-		ackMessage = &msg
+		return domain.NACK, messagePtr("unknown command type")
+	}
+}
+
+func (w *GatewayWorker) handleConfigUpdateCommand(ctx context.Context, payload []byte) (domain.CommandACKStatus, *string) {
+	var p domain.CommandConfigPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return domain.NACK, messagePtr(fmt.Sprintf("invalid config payload: %v", err))
 	}
 
-	w.sendACK(ctx, cmd.CommandID, ackStatus, ackMessage)
+	if p.SendFrequencyMs != nil {
+		if err := w.store.UpdateFrequency(ctx, w.gateway.ID, *p.SendFrequencyMs); err != nil {
+			return domain.NACK, messagePtr(fmt.Sprintf("failed to update frequency in store: %v", err))
+		}
+	}
+
+	if p.Status != nil {
+		if err := w.store.UpdateStatus(ctx, w.gateway.ID, *p.Status); err != nil {
+			return domain.NACK, messagePtr(fmt.Sprintf("failed to persist status: %v", err))
+		}
+	}
+
+	update := domain.GatewayConfigUpdate(p)
+	select {
+	case w.configCh <- update:
+		return domain.ACK, nil
+	default:
+		return domain.NACK, messagePtr("config channel full")
+	}
+}
+
+func (w *GatewayWorker) handleFirmwarePushCommand(ctx context.Context, payload []byte) (domain.CommandACKStatus, *string) {
+	var p domain.CommandFirmwarePayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return domain.NACK, messagePtr(fmt.Sprintf("invalid firmware payload: %v", err))
+	}
+
+	if p.FirmwareVersion == "" {
+		return domain.ACK, nil
+	}
+
+	if err := w.store.UpdateFirmwareVersion(ctx, w.gateway.ID, p.FirmwareVersion); err != nil {
+		return domain.NACK, messagePtr(err.Error())
+	}
+
+	return domain.ACK, nil
+}
+
+func messagePtr(msg string) *string {
+	return &msg
 }
 
 func (w *GatewayWorker) sendACK(ctx context.Context, commandID string, status domain.CommandACKStatus, message *string) {

@@ -20,6 +20,7 @@ const gatewayColumns = `id, management_gateway_id, factory_id, factory_key, seri
 	send_frequency_ms, status, tenant_id, created_at`
 
 const sensorColumns = `id, gateway_id, sensor_id, type, min_range, max_range, algorithm, created_at`
+const gatewayNotFoundFormat = "gateway with ID %d not found"
 
 type SQLiteGatewayStore struct {
 	db      *sql.DB
@@ -176,7 +177,7 @@ func (s *SQLiteGatewayStore) UpdateProvisioned(ctx context.Context, id int64, re
 		return err
 	}
 	if rows == 0 {
-		return fmt.Errorf("gateway with ID %d not found", id)
+		return fmt.Errorf(gatewayNotFoundFormat, id)
 	}
 
 	return nil
@@ -196,7 +197,7 @@ func (s *SQLiteGatewayStore) UpdateStatus(ctx context.Context, id int64, status 
 		return err
 	}
 	if rows == 0 {
-		return fmt.Errorf("gateway with ID %d not found", id)
+		return fmt.Errorf(gatewayNotFoundFormat, id)
 	}
 
 	return nil
@@ -216,7 +217,7 @@ func (s *SQLiteGatewayStore) UpdateFrequency(ctx context.Context, id int64, freq
 		return err
 	}
 	if rows == 0 {
-		return fmt.Errorf("gateway with ID %d not found", id)
+		return fmt.Errorf(gatewayNotFoundFormat, id)
 	}
 
 	return nil
@@ -236,7 +237,7 @@ func (s *SQLiteGatewayStore) UpdateFirmwareVersion(ctx context.Context, id int64
 		return err
 	}
 	if rows == 0 {
-		return fmt.Errorf("gateway with ID %d not found", id)
+		return fmt.Errorf(gatewayNotFoundFormat, id)
 	}
 
 	return nil

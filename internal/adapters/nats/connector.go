@@ -15,12 +15,12 @@ import (
 type NATSMTLSConnector struct {
 	natsURL string
 	caPool  *x509.CertPool
-	clock   ports.Clock
+	clock   ports.Nower
 }
 
 // NewNATSMTLSConnector reads and parses the CA certificate once at construction time.
 // Subsequent Connect calls reuse the cached pool — no disk I/O per connection.
-func NewNATSMTLSConnector(natsURL, caCertPath string, clock ports.Clock) (*NATSMTLSConnector, error) {
+func NewNATSMTLSConnector(natsURL, caCertPath string, clock ports.Nower) (*NATSMTLSConnector, error) {
 	caCert, err := os.ReadFile(caCertPath)
 	if err != nil {
 		return nil, fmt.Errorf("read CA certificate: %w", err)

@@ -15,6 +15,7 @@ const invalidGatewayIDFormat = "invalid gateway ID format"
 const contentType = "Content-Type"
 const contentTypeJSON = "application/json"
 const maxBodyBytes = 1 << 20 // 1 MiB
+const errFailedEncodeResponse = "failed to encode response"
 
 type GatewayHandler struct {
 	lifecycle ports.GatewayLifecycleService
@@ -45,7 +46,7 @@ func (h *GatewayHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(contentType, contentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(dto.GatewayFromDomain(gw)); err != nil {
-		slog.Error("failed to encode response", "err", err)
+		slog.Error(errFailedEncodeResponse, "err", err)
 	}
 }
 
@@ -100,7 +101,7 @@ func (h *GatewayHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set(contentType, contentTypeJSON)
 	if err := json.NewEncoder(w).Encode(dto.GatewayListFromDomain(gateways)); err != nil {
-		slog.Error("failed to encode response", "err", err)
+		slog.Error(errFailedEncodeResponse, "err", err)
 	}
 }
 
@@ -119,7 +120,7 @@ func (h *GatewayHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set(contentType, contentTypeJSON)
 	if err := json.NewEncoder(w).Encode(dto.GatewayFromDomain(gw)); err != nil {
-		slog.Error("failed to encode response", "err", err)
+		slog.Error(errFailedEncodeResponse, "err", err)
 	}
 }
 
@@ -178,6 +179,6 @@ func (h *GatewayHandler) BulkCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		slog.Error("failed to encode response", "err", err)
+		slog.Error(errFailedEncodeResponse, "err", err)
 	}
 }

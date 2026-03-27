@@ -21,6 +21,12 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/fakes"
 )
 
+const (
+	testLocalNATSURL    = "nats://127.0.0.1:4222"
+	testProvisioningURL = "http://provisioning.local"
+	testMissingCACert   = "/definitely/missing/ca.pem"
+)
+
 func writeTempCACert(t *testing.T) string {
 	t.Helper()
 
@@ -89,8 +95,8 @@ func TestSetupDatabaseOpenFails(t *testing.T) {
 
 func TestSetupDecommissionListenerReadCACertFails(t *testing.T) {
 	cfg := &config.Config{
-		NATSCACertPath: "/definitely/missing/ca.pem",
-		NATSUrl:        "nats://127.0.0.1:4222",
+		NATSCACertPath: testMissingCACert,
+		NATSUrl:        testLocalNATSURL,
 	}
 
 	_, err := setupDecommissionListener(context.Background(), cfg, newTestRegistry(newTestDeps()))
@@ -107,7 +113,7 @@ func TestSetupDecommissionListenerParseCACertFails(t *testing.T) {
 
 	cfg := &config.Config{
 		NATSCACertPath: caPath,
-		NATSUrl:        "nats://127.0.0.1:4222",
+		NATSUrl:        testLocalNATSURL,
 	}
 
 	_, err := setupDecommissionListener(context.Background(), cfg, newTestRegistry(newTestDeps()))
@@ -209,8 +215,8 @@ func TestRunConfigLoadFails(t *testing.T) {
 }
 
 func TestRunSetupDatabaseFails(t *testing.T) {
-	t.Setenv("PROVISIONING_URL", "http://provisioning.local")
-	t.Setenv("NATS_URL", "nats://127.0.0.1:4222")
+	t.Setenv("PROVISIONING_URL", testProvisioningURL)
+	t.Setenv("NATS_URL", testLocalNATSURL)
 	t.Setenv("NATS_CA_CERT_PATH", "/tmp/ca.pem")
 	t.Setenv("SQLITE_PATH", filepath.Join(t.TempDir(), "missing-dir", "sim.db"))
 
@@ -224,9 +230,9 @@ func TestRunSetupDatabaseFails(t *testing.T) {
 }
 
 func TestRunCreateNATSConnectorFails(t *testing.T) {
-	t.Setenv("PROVISIONING_URL", "http://provisioning.local")
-	t.Setenv("NATS_URL", "nats://127.0.0.1:4222")
-	t.Setenv("NATS_CA_CERT_PATH", "/definitely/missing/ca.pem")
+	t.Setenv("PROVISIONING_URL", testProvisioningURL)
+	t.Setenv("NATS_URL", testLocalNATSURL)
+	t.Setenv("NATS_CA_CERT_PATH", testMissingCACert)
 	t.Setenv("SQLITE_PATH", filepath.Join(t.TempDir(), "sim.db"))
 
 	err := Run(context.Background())

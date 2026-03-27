@@ -16,11 +16,11 @@ type NATSGatewaySubscriber struct {
 	sub        *nats.Subscription
 	ch         chan domain.IncomingCommand
 	publisher  ports.GatewayPublisher
-	clock      ports.Clock
+	clock      ports.Nower
 	ackSubject string
 }
 
-func NewNATSGatewaySubscriber(js nats.JetStreamContext, tenantID, managementGatewayID string, pub ports.GatewayPublisher, clock ports.Clock) (*NATSGatewaySubscriber, error) {
+func NewNATSGatewaySubscriber(js nats.JetStreamContext, tenantID, managementGatewayID string, pub ports.GatewayPublisher, clock ports.Nower) (*NATSGatewaySubscriber, error) {
 	subject := fmt.Sprintf("command.gw.%s.%s", tenantID, managementGatewayID)
 	ackSubject := fmt.Sprintf("command.ack.%s.%s", tenantID, managementGatewayID)
 	durableName := fmt.Sprintf("gw-%s", managementGatewayID)

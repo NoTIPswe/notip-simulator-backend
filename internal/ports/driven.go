@@ -26,8 +26,8 @@ type GatewayStore interface {
 }
 
 // Runs the full factory-key provisioning bootstrap. Internally generates an EC keypair and CSR, then calls POST /api/provision/onboard.
-type ProvisioningClient interface {
-	Onboard(ctx context.Context, factoryID string, factoryKey string, tenantID string, managementGatewayID uuid.UUID) (domain.ProvisionResult, error)
+type Onboarder interface {
+	Onboard(ctx context.Context, factoryID, factoryKey, tenantID string, managementGatewayID uuid.UUID) (domain.ProvisionResult, error)
 }
 
 // Publishes a raw byte payload to a NATS subject.
@@ -55,6 +55,6 @@ type Encryptor interface {
 }
 
 // Clock abstracts time.Now() for deterministic tests.
-type Clock interface {
+type Nower interface {
 	Now() time.Time
 }

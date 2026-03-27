@@ -31,26 +31,27 @@ const (
 	stageStore
 	stageConnect
 	stageStart
+	errNotFoundFormat = "%w: %s"
 )
 
 type GatewayRegistry struct {
 	workers     map[uuid.UUID]*GatewayWorker
 	mu          sync.RWMutex
 	store       ports.GatewayStore
-	provisioner ports.ProvisioningClient
+	provisioner ports.Onboarder
 	connector   ports.GatewayConnector
 	encryptor   ports.Encryptor
-	clock       ports.Clock
+	clock       ports.Nower
 	cfg         *config.Config
 	metrics     *metrics.Metrics
 }
 
 func NewGatewayRegistry(
 	store ports.GatewayStore,
-	provisioner ports.ProvisioningClient,
+	provisioner ports.Onboarder,
 	connector ports.GatewayConnector,
 	encryptor ports.Encryptor,
-	clock ports.Clock,
+	clock ports.Nower,
 	cfg *config.Config,
 	met *metrics.Metrics,
 ) *GatewayRegistry {
@@ -131,7 +132,7 @@ func (r *GatewayRegistry) Start(ctx context.Context, managementID uuid.UUID) err
 	r.mu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("%w: %s", domain.ErrGatewayNotFound, managementID)
+		return fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
 	}
 
 	if w.IsRunning() {
@@ -148,7 +149,7 @@ func (r *GatewayRegistry) Stop(ctx context.Context, managementID uuid.UUID) erro
 	r.mu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("%w: %s", domain.ErrGatewayNotFound, managementID)
+		return fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
 	}
 
 	w.Stop(workerStopTimeout)
@@ -164,7 +165,7 @@ func (r *GatewayRegistry) Decommission(ctx context.Context, managementID uuid.UU
 	r.mu.Unlock()
 
 	if !ok {
-		return fmt.Errorf("%w: %s", domain.ErrGatewayNotFound, managementID)
+		return fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
 	}
 
 	w.Stop(workerStopTimeout)
@@ -184,7 +185,7 @@ func (r *GatewayRegistry) ListGateways(ctx context.Context) ([]*domain.SimGatewa
 func (r *GatewayRegistry) GetGateway(ctx context.Context, managementID uuid.UUID) (*domain.SimGateway, error) {
 	gw, err := r.store.GetGatewayByManagementID(ctx, managementID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", domain.ErrGatewayNotFound, managementID)
+		return nil, fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
 	}
 	return gw, nil
 }
@@ -231,7 +232,7 @@ func (r *GatewayRegistry) UpdateConfig(ctx context.Context, managementID uuid.UU
 	r.mu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("%w: %s", domain.ErrGatewayNotFound, managementID)
+		return fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
 	}
 
 	select {
@@ -248,7 +249,7 @@ func (r *GatewayRegistry) InjectGatewayAnomaly(ctx context.Context, managementID
 	r.mu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("%w: %s", domain.ErrGatewayNotFound, managementID)
+		return fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
 	}
 
 	select {
@@ -462,7 +463,7 @@ func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway
 	return w, nil
 }
 
-func (r *GatewayRegistry) HandleDecommission(tenantID string, managementGatewayID string) {
+func (r *GatewayRegistry) HandleDecommission(tenantID, managementGatewayID string) {
 	mgmID, err := uuid.Parse(managementGatewayID)
 	if err != nil {
 		slog.Error("Invalid UUID in decommission event", "id", managementGatewayID)

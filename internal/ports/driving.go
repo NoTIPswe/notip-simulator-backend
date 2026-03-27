@@ -37,5 +37,5 @@ type SimulatorControlService interface {
 }
 
 type DecommissionEventReceiver interface {
-	HandleDecommission(tenantID string, managementGatewayID string)
+	HandleDecommission(tenantID, managementGatewayID string)
 }
