@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,49 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/fakes"
 )
+
+func newCommandTestWorker(t *testing.T) (*GatewayWorker, *fakes.FakePublisher, *fakes.FakeGatewayStore) {
+	t.Helper()
+
+	store := fakes.NewFakeGatewayStore()
+	gw := domain.SimGateway{
+		ManagementGatewayID: uuid.New(),
+		TenantID:            "tenant1",
+		SendFrequencyMs:     100,
+	}
+	id, err := store.CreateGateway(context.Background(), gw)
+	if err != nil {
+		t.Fatalf("failed to seed fake store gateway: %v", err)
+	}
+	gw.ID = id
+
+	pub := &fakes.FakePublisher{}
+	worker := NewGatewayWorker(WorkerDeps{
+		Gateway:   gw,
+		Publisher: pub,
+		Encryptor: &fakes.FakeEncryptor{},
+		Clock:     fakes.NewFakeClock(time.Now()),
+		Buffer:    NewMessageBuffer(2, "telemetry.data.tenant1.test", gw.ManagementGatewayID.String(), pub, newTestDeps().met),
+		Store:     store,
+	})
+
+	return worker, pub, store
+}
+
+func decodeLastACK(t *testing.T, pub *fakes.FakePublisher) domain.CommandACK {
+	t.Helper()
+
+	if len(pub.Messages) == 0 {
+		t.Fatal("expected at least one published message")
+	}
+
+	var ack domain.CommandACK
+	if err := json.Unmarshal(pub.Messages[len(pub.Messages)-1].Payload, &ack); err != nil {
+		t.Fatalf("failed to unmarshal ACK: %v", err)
+	}
+
+	return ack
+}
 
 // getWorker takes the worker from the registry (directly through the private field, because it's the same package).
 func getWorker(t *testing.T, reg *GatewayRegistry, id uuid.UUID) *GatewayWorker {
@@ -463,4 +507,92 @@ func TestWorker_Start_WhenAlreadyRunning_NoPanic(t *testing.T) {
 	w := getWorker(t, reg, gw.ManagementGatewayID)
 
 	w.Start(context.Background())
+}
+
+func TestWorker_HandleIncomingCommand_ConfigUpdate_InvalidPayload_SendsNACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cfg-invalid",
+		Type:      domain.ConfigUpdate,
+		Payload:   []byte("{"),
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf("expected NACK, got %s", ack.Status)
+	}
+	if ack.Message == nil || !strings.Contains(*ack.Message, "invalid config payload") {
+		t.Fatalf("expected invalid config payload error, got %v", ack.Message)
+	}
+}
+
+func TestWorker_HandleIncomingCommand_UnknownType_SendsNACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "unknown-type",
+		Type:      domain.CommandType("unsupported"),
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf("expected NACK, got %s", ack.Status)
+	}
+	if ack.Message == nil || *ack.Message != "unknown command type" {
+		t.Fatalf("expected unknown command type message, got %v", ack.Message)
+	}
+}
+
+func TestWorker_HandleIncomingCommand_ConfigUpdate_StatusPersistFails_SendsNACK(t *testing.T) {
+	worker, pub, store := newCommandTestWorker(t)
+	store.ErrUpdateStatus = fakes.ErrSimulated
+
+	status := domain.Running
+	payload, err := json.Marshal(domain.CommandConfigPayload{Status: &status})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cfg-status-fail",
+		Type:      domain.ConfigUpdate,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf("expected NACK, got %s", ack.Status)
+	}
+	if ack.Message == nil || !strings.Contains(*ack.Message, "failed to persist status") {
+		t.Fatalf("expected persist status failure message, got %v", ack.Message)
+	}
+}
+
+func TestWorker_HandleIncomingCommand_ConfigUpdate_ChannelFull_SendsNACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	for i := 0; i < cap(worker.configCh); i++ {
+		worker.configCh <- domain.GatewayConfigUpdate{}
+	}
+
+	freq := 250
+	payload, err := json.Marshal(domain.CommandConfigPayload{SendFrequencyMs: &freq})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cfg-full",
+		Type:      domain.ConfigUpdate,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf("expected NACK, got %s", ack.Status)
+	}
+	if ack.Message == nil || *ack.Message != "config channel full" {
+		t.Fatalf("expected config channel full message, got %v", ack.Message)
+	}
 }

@@ -141,12 +141,16 @@ func (s *FakeCommandSubscription) IsClosed() bool {
 
 // Connector.
 type FakeConnector struct {
+	mu           sync.Mutex
 	Publisher    *FakePublisher
 	Subscription *FakeCommandSubscription
 	Err          error
 }
 
 func (c *FakeConnector) Connect(_ context.Context, _ []byte, _ []byte, _ string, _ uuid.UUID) (ports.GatewayPublisher, ports.CommandSubscription, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.Err != nil {
 		return nil, nil, c.Err
 	}

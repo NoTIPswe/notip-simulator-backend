@@ -473,6 +473,19 @@ func TestGatewayHandler_Start_ServiceError_500(t *testing.T) {
 	}
 }
 
+func TestGatewayHandler_Start_AlreadyRunning_409(t *testing.T) {
+	id := uuid.New()
+	lc := &fakes.FakeGatewayLifecycleService{
+		StartFn: func(_ context.Context, _ uuid.UUID) error { return domain.ErrGatewayAlreadyRunning },
+	}
+	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	w := serveWithMux("POST /sim/gateways/{id}/start", h.Start,
+		newReq(http.MethodPost, simHelper2+id.String()+"/start", nil))
+	if w.Code != http.StatusConflict {
+		t.Errorf("want 409, got %d", w.Code)
+	}
+}
+
 func TestGatewayHandler_Stop_InvalidUUID_400(t *testing.T) {
 	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
 	w := serveWithMux("POST /sim/gateways/{id}/stop", h.Stop,
