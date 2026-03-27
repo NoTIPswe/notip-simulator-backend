@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // blank import to register the SQLite driver via its init() function
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/migrations"
@@ -78,7 +78,7 @@ func (s *SQLiteGatewayStore) RunMigrations(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("read migration file %s: %w", version, err)
 		}
-		if _, err := s.db.ExecContext(ctx, string(data)); err != nil {
+		if _, err := s.db.ExecContext(ctx, string(data)); err != nil { // NOSONAR - query is read from trusted embedded FS, not user input
 			return fmt.Errorf("execute migration %s: %w", version, err)
 		}
 		if _, err := s.db.ExecContext(ctx, `INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
