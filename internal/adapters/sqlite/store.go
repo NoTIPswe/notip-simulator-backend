@@ -19,7 +19,13 @@ const gatewayColumns = `id, management_gateway_id, factory_id, factory_key, seri
 	firmware_version, provisioned, cert_pem, private_key_pem, encryption_key,
 	send_frequency_ms, status, tenant_id, created_at`
 
+const getGatewayByIDQuery = `SELECT ` + gatewayColumns + ` FROM gateways WHERE id = ?`
+const getGatewayByManagementIDQuery = `SELECT ` + gatewayColumns + ` FROM gateways WHERE management_gateway_id = ?`
+const listGatewaysQuery = `SELECT ` + gatewayColumns + ` FROM gateways`
+
 const sensorColumns = `id, gateway_id, sensor_id, type, min_range, max_range, algorithm, created_at`
+const listSensorsByGatewayIDQuery = `SELECT ` + sensorColumns + ` FROM sensors WHERE gateway_id = ?`
+const getSensorByIDQuery = `SELECT ` + sensorColumns + ` FROM sensors WHERE id = ?`
 const gatewayNotFoundFormat = "gateway with ID %d not found"
 
 type SQLiteGatewayStore struct {
@@ -124,17 +130,17 @@ func (s *SQLiteGatewayStore) CreateGateway(ctx context.Context, gw domain.SimGat
 }
 
 func (s *SQLiteGatewayStore) GetGateway(ctx context.Context, id int64) (*domain.SimGateway, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+gatewayColumns+` FROM gateways WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, getGatewayByIDQuery, id)
 	return scanGateway(row)
 }
 
 func (s *SQLiteGatewayStore) GetGatewayByManagementID(ctx context.Context, managementID uuid.UUID) (*domain.SimGateway, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+gatewayColumns+` FROM gateways WHERE management_gateway_id = ?`, managementID.String())
+	row := s.db.QueryRowContext(ctx, getGatewayByManagementIDQuery, managementID.String())
 	return scanGateway(row)
 }
 
 func (s *SQLiteGatewayStore) ListGateways(ctx context.Context) ([]*domain.SimGateway, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+gatewayColumns+` FROM gateways`)
+	rows, err := s.db.QueryContext(ctx, listGatewaysQuery)
 	if err != nil {
 		return nil, fmt.Errorf("list gateways: %w", err)
 	}
@@ -272,7 +278,7 @@ func (s *SQLiteGatewayStore) CreateSensor(ctx context.Context, sensor domain.Sim
 }
 
 func (s *SQLiteGatewayStore) ListSensors(ctx context.Context, gatewayID int64) ([]*domain.SimSensor, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+sensorColumns+` FROM sensors WHERE gateway_id = ?`, gatewayID)
+	rows, err := s.db.QueryContext(ctx, listSensorsByGatewayIDQuery, gatewayID)
 	if err != nil {
 		return nil, fmt.Errorf("list sensors: %w", err)
 	}
@@ -303,7 +309,7 @@ func (s *SQLiteGatewayStore) DeleteSensor(ctx context.Context, id int64) error {
 }
 
 func (s *SQLiteGatewayStore) GetSensor(ctx context.Context, id int64) (*domain.SimSensor, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+sensorColumns+` FROM sensors WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, getSensorByIDQuery, id)
 	return scanSensor(row)
 }
 
