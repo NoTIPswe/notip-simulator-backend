@@ -2,5 +2,7 @@
     "sonarlint.connectedMode.project": {
         "connectionId": "notipswe",
         "projectKey": "NoTIPswe_notip-simulator-backend"
-    }
+    },
+    "go.buildTags": "integration",
+    "go.testTags": "integration"
 }

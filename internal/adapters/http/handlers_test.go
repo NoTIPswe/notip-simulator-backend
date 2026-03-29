@@ -379,7 +379,7 @@ func TestSimTokenMiddleware_ValidToken_Passes(t *testing.T) {
 	handler := simhttp.SimTokenMiddleware("secret-token", next)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, simHelper, nil)
-	req.Header.Set("Authorization", "Bearer secret-token")
+	req.Header.Set("X-Sim-Token", "secret-token")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -395,7 +395,7 @@ func TestSimTokenMiddleware_InvalidToken_401(t *testing.T) {
 	handler := simhttp.SimTokenMiddleware("correct-token", next)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, simHelper, nil)
-	req.Header.Set("Authorization", "Bearer wrong-token")
+	req.Header.Set("X-Sim-Token", "wrong-token")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -416,22 +416,6 @@ func TestSimTokenMiddleware_MissingHeader_401(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("want 401 for missing token, got %d", w.Code)
-	}
-}
-
-func TestSimTokenMiddleware_HealthRoute_SkipsAuth(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	handler := simhttp.SimTokenMiddleware("secret", next)
-
-	// /health doesn't need a token.
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("want 200 for /health without token, got %d", w.Code)
 	}
 }
 

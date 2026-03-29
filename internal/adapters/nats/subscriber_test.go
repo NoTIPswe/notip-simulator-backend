@@ -143,8 +143,7 @@ func TestSubscriber_Close_DrainsChan(t *testing.T) {
 	s.ch <- domain.IncomingCommand{CommandID: "x", Type: domain.ConfigUpdate, IssuedAt: clk.Now()}
 
 	// Close should not panic even with a pending message.
-	// (real sub.Drain() is nil here, so we just verify Close doesn't crash).
-	_ = s.Close
+	_ = s.Close()
 }
 
 func TestSubscriber_FirmwarePush_EnqueuedCorrectly(t *testing.T) {
