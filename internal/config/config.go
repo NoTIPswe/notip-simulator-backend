@@ -13,7 +13,6 @@ type Config struct {
 	NATSCACertPath         string
 	SQLitePath             string
 	HTTPAddr               string
-	SimTokenSecret         string
 	DefaultSendFrequencyMs int
 	GatewayBufferSize      int
 	MetricsAddr            string
@@ -24,7 +23,6 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		SQLitePath:      getEnv("SQLITE_PATH", "/data/simulator.db"),
 		HTTPAddr:        getEnv("HTTP_ADDR", ":8090"),
-		SimTokenSecret:  getEnv("SIM_TOKEN_SECRET", ""),
 		MetricsAddr:     getEnv("METRICS_ADDR", ":9090"),
 		ProvisioningURL: getEnv("PROVISIONING_URL", ""),
 		NATSUrl:         getEnv("NATS_URL", ""),

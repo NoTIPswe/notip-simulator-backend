@@ -67,10 +67,10 @@ func writeTempCACert(t *testing.T) string {
 }
 
 func newHTTPServerForAppTests(addr string) *httpadapter.HTTPServer {
-	gw := httpadapter.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
+	gw := httpadapter.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
 	sensor := httpadapter.NewSensorHandler(&fakes.FakeSensorManagementService{})
 	anomaly := httpadapter.NewAnomalyHandler(&fakes.FakeSimulatorControlService{})
-	return httpadapter.NewHTTPServer(addr, "", gw, sensor, anomaly)
+	return httpadapter.NewHTTPServer(addr, gw, sensor, anomaly)
 }
 
 func TestSetupDatabaseSuccess(t *testing.T) {

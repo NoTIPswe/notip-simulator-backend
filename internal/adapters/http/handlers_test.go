@@ -58,8 +58,8 @@ func TestGatewayHandler_Create_201(t *testing.T) {
 			return &domain.SimGateway{ID: 1, ManagementGatewayID: id, Status: domain.Running}, nil
 		},
 	}
-	ctrl := &fakes.FakeSimulatorControlService{}
-	h := simhttp.NewGatewayHandler(lc, ctrl)
+
+	h := simhttp.NewGatewayHandler(lc)
 
 	req := newReq(http.MethodPost, simHelper, jsonBody(t, domain.CreateGatewayRequest{
 		TenantID: "t1", FactoryID: "fid", FactoryKey: "fkey",
@@ -78,7 +78,7 @@ func TestGatewayHandler_Create_ServiceError_500(t *testing.T) {
 			return nil, fakes.ErrSimulated
 		},
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 
 	req := newReq(http.MethodPost, simHelper, jsonBody(t, domain.CreateGatewayRequest{TenantID: "t1"}))
 	w := httptest.NewRecorder()
@@ -90,7 +90,7 @@ func TestGatewayHandler_Create_ServiceError_500(t *testing.T) {
 }
 
 func TestGatewayHandler_Create_BadBody_400(t *testing.T) {
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, simHelper, bytes.NewReader([]byte("not-json")))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -107,7 +107,7 @@ func TestGatewayHandler_List_200(t *testing.T) {
 			return []*domain.SimGateway{{ID: 1}, {ID: 2}}, nil
 		},
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 
 	w := serveWithMux("GET /sim/gateways", h.List, newReq(http.MethodGet, simHelper, nil))
 	if w.Code != http.StatusOK {
@@ -122,7 +122,7 @@ func TestGatewayHandler_Get_200(t *testing.T) {
 			return &domain.SimGateway{ManagementGatewayID: mID}, nil
 		},
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 
 	w := serveWithMux("GET /sim/gateways/{id}", h.Get,
 		newReq(http.MethodGet, simHelper2+id.String(), nil))
@@ -132,7 +132,7 @@ func TestGatewayHandler_Get_200(t *testing.T) {
 }
 
 func TestGatewayHandler_Get_InvalidUUID_400(t *testing.T) {
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
 	w := serveWithMux("GET /sim/gateways/{id}", h.Get,
 		newReq(http.MethodGet, "/sim/gateways/not-a-uuid", nil))
 	if w.Code != http.StatusBadRequest {
@@ -145,7 +145,7 @@ func TestGatewayHandler_Start_204(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{
 		StartFn: func(_ context.Context, mID uuid.UUID) error { return nil },
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 
 	w := serveWithMux("POST /sim/gateways/{id}/start", h.Start,
 		newReq(http.MethodPost, simHelper2+id.String()+"/start", nil))
@@ -159,7 +159,7 @@ func TestGatewayHandler_Stop_204(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{
 		StopFn: func(_ context.Context, mID uuid.UUID) error { return nil },
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 
 	w := serveWithMux("POST /sim/gateways/{id}/stop", h.Stop,
 		newReq(http.MethodPost, simHelper2+id.String()+"/stop", nil))
@@ -173,25 +173,10 @@ func TestGatewayHandler_Decommission_204(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{
 		DecommissionFn: func(_ context.Context, mID uuid.UUID) error { return nil },
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 
 	w := serveWithMux("DELETE /sim/gateways/{id}", h.Decommission,
 		newReq(http.MethodDelete, simHelper2+id.String(), nil))
-	if w.Code != http.StatusNoContent {
-		t.Errorf(Helper204, w.Code)
-	}
-}
-
-func TestGatewayHandler_UpdateConfig_204(t *testing.T) {
-	id := uuid.New()
-	ctrl := &fakes.FakeSimulatorControlService{
-		UpdateConfigFn: func(_ context.Context, mID uuid.UUID, _ domain.GatewayConfigUpdate) error { return nil },
-	}
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, ctrl)
-	freq := 200
-	w := serveWithMux("PATCH /sim/gateways/{id}/config", h.UpdateConfig,
-		newReq(http.MethodPatch, simHelper2+id.String()+"/config",
-			jsonBody(t, domain.GatewayConfigUpdate{SendFrequencyMs: &freq})))
 	if w.Code != http.StatusNoContent {
 		t.Errorf(Helper204, w.Code)
 	}
@@ -207,7 +192,7 @@ func TestGatewayHandler_BulkCreate_201(t *testing.T) {
 			return gws, nil
 		},
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 
 	w := httptest.NewRecorder()
 	h.BulkCreate(w, newReq(http.MethodPost, "/sim/gateways/bulk", jsonBody(t, domain.BulkCreateRequest{
@@ -371,72 +356,8 @@ func TestAnomalyHandler_ServiceError_ReturnsError(t *testing.T) {
 	}
 }
 
-// SimTokenMiddleware.
-func TestSimTokenMiddleware_ValidToken_Passes(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	handler := simhttp.SimTokenMiddleware("secret-token", next)
-
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, simHelper, nil)
-	req.Header.Set("X-Sim-Token", "secret-token")
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("want 200 for valid token, got %d", w.Code)
-	}
-}
-
-func TestSimTokenMiddleware_InvalidToken_401(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	handler := simhttp.SimTokenMiddleware("correct-token", next)
-
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, simHelper, nil)
-	req.Header.Set("X-Sim-Token", "wrong-token")
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("want 401 for wrong token, got %d", w.Code)
-	}
-}
-
-func TestSimTokenMiddleware_MissingHeader_401(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	handler := simhttp.SimTokenMiddleware("secret", next)
-
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, simHelper, nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("want 401 for missing token, got %d", w.Code)
-	}
-}
-
-func TestSimTokenMiddleware_EmptySecret_AllowsAll(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	// With an empty secret middleware should not block.
-	handler := simhttp.SimTokenMiddleware("", next)
-
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, simHelper, nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("want 200 when token secret is empty, got %d", w.Code)
-	}
-}
-
 func TestGatewayHandler_Start_InvalidUUID_400(t *testing.T) {
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
 	w := serveWithMux("POST /sim/gateways/{id}/start", h.Start,
 		newReq(http.MethodPost, "/sim/gateways/not-a-uuid/start", nil))
 	if w.Code != http.StatusBadRequest {
@@ -449,7 +370,7 @@ func TestGatewayHandler_Start_ServiceError_500(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{
 		StartFn: func(_ context.Context, _ uuid.UUID) error { return fakes.ErrSimulated },
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 	w := serveWithMux("POST /sim/gateways/{id}/start", h.Start,
 		newReq(http.MethodPost, simHelper2+id.String()+"/start", nil))
 	if w.Code != http.StatusInternalServerError {
@@ -462,7 +383,7 @@ func TestGatewayHandler_Start_AlreadyRunning_409(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{
 		StartFn: func(_ context.Context, _ uuid.UUID) error { return domain.ErrGatewayAlreadyRunning },
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 	w := serveWithMux("POST /sim/gateways/{id}/start", h.Start,
 		newReq(http.MethodPost, simHelper2+id.String()+"/start", nil))
 	if w.Code != http.StatusConflict {
@@ -471,7 +392,7 @@ func TestGatewayHandler_Start_AlreadyRunning_409(t *testing.T) {
 }
 
 func TestGatewayHandler_Stop_InvalidUUID_400(t *testing.T) {
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
 	w := serveWithMux("POST /sim/gateways/{id}/stop", h.Stop,
 		newReq(http.MethodPost, "/sim/gateways/not-a-uuid/stop", nil))
 	if w.Code != http.StatusBadRequest {
@@ -484,7 +405,7 @@ func TestGatewayHandler_Stop_ServiceError_500(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{
 		StopFn: func(_ context.Context, _ uuid.UUID) error { return fakes.ErrSimulated },
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 	w := serveWithMux("POST /sim/gateways/{id}/stop", h.Stop,
 		newReq(http.MethodPost, simHelper2+id.String()+"/stop", nil))
 	if w.Code != http.StatusInternalServerError {
@@ -493,7 +414,7 @@ func TestGatewayHandler_Stop_ServiceError_500(t *testing.T) {
 }
 
 func TestGatewayHandler_Decommission_InvalidUUID_400(t *testing.T) {
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
 	w := serveWithMux("DELETE /sim/gateways/{id}", h.Decommission,
 		newReq(http.MethodDelete, "/sim/gateways/not-a-uuid", nil))
 	if w.Code != http.StatusBadRequest {
@@ -506,7 +427,7 @@ func TestGatewayHandler_Decommission_ServiceError_500(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{
 		DecommissionFn: func(_ context.Context, _ uuid.UUID) error { return fakes.ErrSimulated },
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 	w := serveWithMux("DELETE /sim/gateways/{id}", h.Decommission,
 		newReq(http.MethodDelete, simHelper2+id.String(), nil))
 	if w.Code != http.StatusInternalServerError {
@@ -520,7 +441,7 @@ func TestGatewayHandler_List_ServiceError_500(t *testing.T) {
 			return nil, fakes.ErrSimulated
 		},
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 	w := serveWithMux("GET /sim/gateways", h.List, newReq(http.MethodGet, simHelper, nil))
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("want 500, got %d", w.Code)
@@ -534,7 +455,7 @@ func TestGatewayHandler_Get_ServiceError_404(t *testing.T) {
 			return nil, domain.ErrGatewayNotFound
 		},
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 	w := serveWithMux("GET /sim/gateways/{id}", h.Get,
 		newReq(http.MethodGet, simHelper2+id.String(), nil))
 	if w.Code != http.StatusNotFound {
@@ -542,45 +463,8 @@ func TestGatewayHandler_Get_ServiceError_404(t *testing.T) {
 	}
 }
 
-func TestGatewayHandler_UpdateConfig_InvalidUUID_400(t *testing.T) {
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
-	w := serveWithMux("PATCH /sim/gateways/{id}/config", h.UpdateConfig,
-		newReq(http.MethodPatch, "/sim/gateways/not-a-uuid/config", jsonBody(t, domain.GatewayConfigUpdate{})))
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("want 400, got %d", w.Code)
-	}
-}
-
-func TestGatewayHandler_UpdateConfig_BadBody_400(t *testing.T) {
-	id := uuid.New()
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
-	w := serveWithMux("PATCH /sim/gateways/{id}/config", h.UpdateConfig,
-		newReq(http.MethodPatch, simHelper2+id.String()+"/config",
-			bytes.NewReader([]byte("not-json"))))
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("want 400, got %d", w.Code)
-	}
-}
-
-func TestGatewayHandler_UpdateConfig_ServiceError_500(t *testing.T) {
-	id := uuid.New()
-	ctrl := &fakes.FakeSimulatorControlService{
-		UpdateConfigFn: func(_ context.Context, _ uuid.UUID, _ domain.GatewayConfigUpdate) error {
-			return fakes.ErrSimulated
-		},
-	}
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, ctrl)
-	freq := 100
-	w := serveWithMux("PATCH /sim/gateways/{id}/config", h.UpdateConfig,
-		newReq(http.MethodPatch, simHelper2+id.String()+"/config",
-			jsonBody(t, domain.GatewayConfigUpdate{SendFrequencyMs: &freq})))
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("want 500, got %d", w.Code)
-	}
-}
-
 func TestGatewayHandler_BulkCreate_BadBody_400(t *testing.T) {
-	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
 	w := httptest.NewRecorder()
 	h.BulkCreate(w, newReq(http.MethodPost, "/sim/gateways/bulk", bytes.NewReader([]byte("not-json"))))
 	if w.Code != http.StatusBadRequest {
@@ -600,7 +484,7 @@ func TestGatewayHandler_BulkCreate_PartialErrors_207(t *testing.T) {
 				}
 		},
 	}
-	h := simhttp.NewGatewayHandler(lc, &fakes.FakeSimulatorControlService{})
+	h := simhttp.NewGatewayHandler(lc)
 	w := httptest.NewRecorder()
 	h.BulkCreate(w, newReq(http.MethodPost, "/sim/gateways/bulk", jsonBody(t, domain.BulkCreateRequest{
 		Count: 2, TenantID: "t1",

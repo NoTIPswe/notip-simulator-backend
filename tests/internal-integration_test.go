@@ -45,7 +45,7 @@ func newIntegrationEnv(t *testing.T) *testEnv {
 	met := metrics.NewTestMetrics()
 	cfg := &config.Config{
 		DefaultSendFrequencyMs: 50, // fast ticks for timing-sensitive tests.
-		GatewayBufferSize:      1,
+		GatewayBufferSize:      10,
 	}
 
 	// Provision responses need a valid 32-byte AES key.
@@ -62,7 +62,7 @@ func newIntegrationEnv(t *testing.T) *testEnv {
 	registry := app.NewGatewayRegistry(store, provisioner, connector, encryptor, clock, cfg, met)
 
 	// Mirror the route table from NewHTTPServer exactly so we exercise the real handler/registry integration without binding a TCP port.
-	gwHandler := httpadapter.NewGatewayHandler(registry, registry)
+	gwHandler := httpadapter.NewGatewayHandler(registry)
 	sensorHandler := httpadapter.NewSensorHandler(registry)
 	anomalyHandler := httpadapter.NewAnomalyHandler(registry)
 
@@ -74,7 +74,6 @@ func newIntegrationEnv(t *testing.T) *testEnv {
 	mux.HandleFunc("POST /sim/gateways/{id}/start", gwHandler.Start)
 	mux.HandleFunc("POST /sim/gateways/{id}/stop", gwHandler.Stop)
 	mux.HandleFunc("DELETE /sim/gateways/{id}", gwHandler.Decommission)
-	mux.HandleFunc("PATCH /sim/gateways/{id}/config", gwHandler.UpdateConfig)
 	mux.HandleFunc("POST /sim/gateways/{id}/sensors", sensorHandler.Add)
 	mux.HandleFunc("GET /sim/gateways/{id}/sensors", sensorHandler.List)
 	mux.HandleFunc("DELETE /sim/sensors/{sensorId}", sensorHandler.Delete)
@@ -110,25 +109,6 @@ func (e *testEnv) postJSON(t *testing.T, path string, body any) *http.Response {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("postJSON: POST %s: %v", path, err)
-	}
-	return resp
-}
-
-// patchJSON marshals body as JSON and sends a PATCH to path.
-func (e *testEnv) patchJSON(t *testing.T, path string, body any) *http.Response {
-	t.Helper()
-	b, err := json.Marshal(body)
-	if err != nil {
-		t.Fatalf("patchJSON: marshal: %v", err)
-	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPatch, e.server.URL+path, bytes.NewReader(b))
-	if err != nil {
-		t.Fatalf("patchJSON: new request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("patchJSON: PATCH %s: %v", path, err)
 	}
 	return resp
 }
@@ -485,52 +465,6 @@ func TestIntegration_BulkCreate_AllFailure(t *testing.T) {
 	}
 }
 
-// Config update.
-
-func TestIntegration_UpdateConfig_Success(t *testing.T) {
-	e := newIntegrationEnv(t)
-	gw := e.createGateway(t)
-
-	newFreq := 200
-	resp := e.patchJSON(t,
-		fmt.Sprintf("/sim/gateways/%s/config", gw.ManagementGatewayID),
-		domain.GatewayConfigUpdate{SendFrequencyMs: &newFreq},
-	)
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusNoContent {
-		t.Errorf("expected 204, got %d", resp.StatusCode)
-	}
-}
-
-func TestIntegration_UpdateConfig_NotFound(t *testing.T) {
-	e := newIntegrationEnv(t)
-
-	newFreq := 200
-	resp := e.patchJSON(t,
-		fmt.Sprintf("/sim/gateways/%s/config", uuid.New()),
-		domain.GatewayConfigUpdate{SendFrequencyMs: &newFreq},
-	)
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("expected 404, got %d", resp.StatusCode)
-	}
-}
-
-func TestIntegration_UpdateConfig_InvalidID(t *testing.T) {
-	e := newIntegrationEnv(t)
-
-	newFreq := 100
-	resp := e.patchJSON(t, "/sim/gateways/bad-id/config",
-		domain.GatewayConfigUpdate{SendFrequencyMs: &newFreq})
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", resp.StatusCode)
-	}
-}
-
 // Anomaly injection.
 
 func TestIntegration_InjectNetworkDegradation_Success(t *testing.T) {
@@ -727,80 +661,5 @@ func TestIntegration_RestoreAll_ConnectorFailure_ContinuesOthers(t *testing.T) {
 	// RestoreAll logs per-gateway errors but does NOT propagate them.
 	if err := e.registry.RestoreAll(context.Background()); err != nil {
 		t.Errorf("RestoreAll should absorb per-gateway errors: %v", err)
-	}
-}
-
-// SimTokenMiddleware.
-
-func TestIntegration_Middleware_EmptyToken_AllowsAll(t *testing.T) {
-	//Let's create an empty token
-	store := fakes.NewFakeGatewayStore()
-	registry := app.NewGatewayRegistry(
-		store,
-		&fakes.FakeProvisioningClient{},
-		&fakes.FakeConnector{},
-		&fakes.FakeEncryptor{},
-		fakes.NewFakeClock(time.Now()),
-		&config.Config{SimTokenSecret: "", GatewayBufferSize: 1},
-		metrics.NewTestMetrics(),
-	)
-	gwHandler := httpadapter.NewGatewayHandler(registry, registry)
-	sensorHandler := httpadapter.NewSensorHandler(registry)
-	anomalyHandler := httpadapter.NewAnomalyHandler(registry)
-
-	srv := httptest.NewServer(httpadapter.NewHTTPServer(
-		":0", "", gwHandler, sensorHandler, anomalyHandler,
-	).Handler())
-	t.Cleanup(srv.Close)
-
-	// Let's try sending a request without any header X-Sim-Token.
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/sim/gateways", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("GET /sim/gateways: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	//If the token we should receive is "", the middleware should let the request go through.
-	if resp.StatusCode == http.StatusUnauthorized {
-		t.Error("requests should not be blocked when expected token is empty, got 401")
-	}
-}
-
-func TestIntegration_Middleware_GatewayRoutes_RequireToken(t *testing.T) {
-	const token = "secret"
-	store := fakes.NewFakeGatewayStore()
-	registry := app.NewGatewayRegistry(
-		store,
-		&fakes.FakeProvisioningClient{},
-		&fakes.FakeConnector{},
-		&fakes.FakeEncryptor{},
-		fakes.NewFakeClock(time.Now()),
-		&config.Config{SimTokenSecret: token, GatewayBufferSize: 1},
-		metrics.NewTestMetrics(),
-	)
-	gwHandler := httpadapter.NewGatewayHandler(registry, registry)
-	sensorHandler := httpadapter.NewSensorHandler(registry)
-	anomalyHandler := httpadapter.NewAnomalyHandler(registry)
-
-	srv := httptest.NewServer(httpadapter.NewHTTPServer(
-		":0", token, gwHandler, sensorHandler, anomalyHandler,
-	).Handler())
-	t.Cleanup(srv.Close)
-
-	// Gateway route senza token → 401
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/sim/gateways", nil)
-	resp, _ := http.DefaultClient.Do(req)
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("want 401 on gateway route without token, got %d", resp.StatusCode)
-	}
-
-	// Sensor route senza token → non 401
-	req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/sim/gateways/1/sensors", nil)
-	resp, _ = http.DefaultClient.Do(req)
-	_ = resp.Body.Close()
-	if resp.StatusCode == http.StatusUnauthorized {
-		t.Errorf("sensor routes should not require token, got 401")
 	}
 }

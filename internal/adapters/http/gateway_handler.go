@@ -19,13 +19,11 @@ const errFailedEncodeResponse = "failed to encode response"
 
 type GatewayHandler struct {
 	lifecycle ports.GatewayLifecycleService
-	control   ports.SimulatorControlService
 }
 
-func NewGatewayHandler(lifecycle ports.GatewayLifecycleService, control ports.SimulatorControlService) *GatewayHandler {
+func NewGatewayHandler(lifecycle ports.GatewayLifecycleService) *GatewayHandler {
 	return &GatewayHandler{
 		lifecycle: lifecycle,
-		control:   control,
 	}
 }
 
@@ -122,27 +120,6 @@ func (h *GatewayHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(dto.GatewayFromDomain(gw)); err != nil {
 		slog.Error(errFailedEncodeResponse, "err", err)
 	}
-}
-
-func (h *GatewayHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
-	id, err := uuid.Parse(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, invalidGatewayIDFormat, http.StatusBadRequest)
-		return
-	}
-
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-	var update domain.GatewayConfigUpdate
-	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	if err := h.control.UpdateConfig(r.Context(), id, update); err != nil {
-		writeError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *GatewayHandler) BulkCreate(w http.ResponseWriter, r *http.Request) {

@@ -145,13 +145,12 @@ func startMetricsServer(addr string, errCh chan<- error) *nethttp.Server {
 }
 
 func startAPIServer(cfg *config.Config, registry *GatewayRegistry, errCh chan<- error) *httpadapter.HTTPServer {
-	gwHandler := httpadapter.NewGatewayHandler(registry, registry)
+	gwHandler := httpadapter.NewGatewayHandler(registry)
 	sensorHandler := httpadapter.NewSensorHandler(registry)
 	anomalyHandler := httpadapter.NewAnomalyHandler(registry)
 
 	srv := httpadapter.NewHTTPServer(
 		cfg.HTTPAddr,
-		cfg.SimTokenSecret,
 		gwHandler,
 		sensorHandler,
 		anomalyHandler,
