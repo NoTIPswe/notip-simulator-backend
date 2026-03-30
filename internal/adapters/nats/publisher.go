@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -36,7 +37,20 @@ func (p *NATSGatewayPublisher) Close() error {
 }
 
 func (p *NATSGatewayPublisher) Reconnect(ctx context.Context) error {
-	nc, err := nats.Connect(p.servers, p.opts...)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	opts := append([]nats.Option{}, p.opts...)
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout := time.Until(deadline)
+		if timeout <= 0 {
+			return context.DeadlineExceeded
+		}
+		opts = append(opts, nats.Timeout(timeout))
+	}
+
+	nc, err := nats.Connect(p.servers, opts...)
 	if err != nil {
 		return fmt.Errorf("reconnect to NATS: %w", err)
 	}

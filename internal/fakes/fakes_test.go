@@ -102,15 +102,15 @@ func TestFakeConnector_Connect(t *testing.T) {
 	}
 }
 
-func TestFakeProvisioningClient_Onboard(t *testing.T) {
+func TestFakeProvisioningClientOnboard(t *testing.T) {
 	p := &FakeProvisioningClient{Err: ErrSimulated}
-	if _, err := p.Onboard(context.Background(), "f", "k", "t", uuid.New()); err == nil {
+	if _, err := p.Onboard(context.Background(), "f", "k", 100); err == nil {
 		t.Fatal("expected onboard error")
 	}
 
 	p.Err = nil
 	p.Result = domain.ProvisionResult{CertPEM: []byte("cert")}
-	res, err := p.Onboard(context.Background(), "f", "k", "t", uuid.New())
+	res, err := p.Onboard(context.Background(), "f", "k", 100)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -64,6 +64,8 @@ type GatewayWorker struct {
 	outlierCh     chan domain.SensorOutlierCommand
 	configCh      chan domain.GatewayConfigUpdate
 	activeAnomaly *activeAnomalyState
+
+	commandPumpCancel context.CancelFunc
 }
 
 type WorkerDeps struct {
@@ -183,6 +185,10 @@ func (w *GatewayWorker) drainControlChannels(ticker *time.Ticker) {
 	select {
 	case cfg := <-w.configCh:
 		if cfg.SendFrequencyMs != nil {
+			if *cfg.SendFrequencyMs <= 0 {
+				slog.Warn("ignoring invalid send frequency update", "gatewayID", w.gateway.ManagementGatewayID, "sendFrequencyMs", *cfg.SendFrequencyMs)
+				break
+			}
 			w.gateway.SendFrequencyMs = *cfg.SendFrequencyMs
 			ticker.Reset(time.Duration(w.gateway.SendFrequencyMs) * time.Millisecond)
 		}
@@ -341,6 +347,9 @@ func (w *GatewayWorker) handleConfigUpdateCommand(ctx context.Context, payload [
 	}
 
 	if p.SendFrequencyMs != nil {
+		if *p.SendFrequencyMs <= 0 {
+			return domain.NACK, messagePtr("sendFrequencyMs must be > 0")
+		}
 		if err := w.store.UpdateFrequency(ctx, w.gateway.ID, *p.SendFrequencyMs); err != nil {
 			return domain.NACK, messagePtr(fmt.Sprintf("failed to update frequency in store: %v", err))
 		}

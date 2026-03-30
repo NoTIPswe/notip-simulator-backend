@@ -1,7 +1,7 @@
 BINARY  ?= notip-app
 TAG     ?= main
 FILE    ?= nats-contracts.yaml
-SERVICE ?= data-consumer
+SERVICE ?= simulator-backend
 
 .PHONY: all build run clean fmt vet lint test test-race cover fetch-contracts docker-build docker-run help
 

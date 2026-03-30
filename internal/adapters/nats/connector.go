@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/ports"
 	"github.com/google/uuid"
@@ -46,7 +47,9 @@ func (c *NATSMTLSConnector) Connect(ctx context.Context, certPEM []byte, keyPEM 
 
 	opts := []nats.Option{
 		nats.Secure(tlsCfg),
-		nats.MaxReconnects(-1),
+		nats.MaxReconnects(60),
+		nats.ReconnectWait(2 * time.Second),
+		nats.ReconnectJitter(500*time.Millisecond, 2*time.Second),
 	}
 
 	nc, err := nats.Connect(c.natsURL, opts...)

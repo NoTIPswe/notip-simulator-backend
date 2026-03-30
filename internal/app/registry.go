@@ -70,26 +70,22 @@ func NewGatewayRegistry(
 // GatewayLifecycleService methods.
 
 func (r *GatewayRegistry) CreateAndStart(ctx context.Context, req domain.CreateGatewayRequest) (*domain.SimGateway, error) {
-	managementID := uuid.New()
+	sendFrequency := req.SendFrequencyMs
+	if sendFrequency <= 0 {
+		sendFrequency = r.cfg.DefaultSendFrequencyMs
+	}
 
+	// ManagementGatewayID and TenantID are assigned by the provisioning service and set inside runProvisioningSaga.
 	gw := domain.SimGateway{
-		ManagementGatewayID: managementID,
-		FactoryID:           req.FactoryID,
-		FactoryKey:          req.FactoryKey,
-		SerialNumber:        req.SerialNumber,
-		Model:               req.Model,
-		FirmwareVersion:     req.FirmwareVersion,
-		SendFrequencyMs:     req.SendFrequencyMs,
-		Status:              domain.Provisioning,
-		TenantID:            req.TenantID,
-		CreatedAt:           r.clock.Now(),
+		FactoryID:       req.FactoryID,
+		FactoryKey:      req.FactoryKey,
+		SerialNumber:    req.SerialNumber,
+		Model:           req.Model,
+		FirmwareVersion: req.FirmwareVersion,
+		SendFrequencyMs: sendFrequency,
+		Status:          domain.Provisioning,
+		CreatedAt:       r.clock.Now(),
 	}
-
-	id, err := r.store.CreateGateway(ctx, gw)
-	if err != nil {
-		return nil, fmt.Errorf("create gateway in store: %w", err)
-	}
-	gw.ID = id
 
 	if err := r.runProvisioningSaga(ctx, &gw); err != nil {
 		return nil, err
@@ -139,7 +135,7 @@ func (r *GatewayRegistry) Start(ctx context.Context, managementID uuid.UUID) err
 		return nil
 	}
 
-	w.Start(ctx)
+	w.Start(context.Background())
 	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Running)
 }
 
@@ -342,25 +338,36 @@ func (r *GatewayRegistry) runProvisioningSaga(ctx context.Context, gw *domain.Si
 		reachedStage provisioningStage
 	)
 
-	result, err := r.provisioner.Onboard(ctx, gw.FactoryID, gw.FactoryKey, gw.TenantID, gw.ManagementGatewayID)
+	// Stage 1: Provision — identity (gatewayId, tenantId) is assigned by the provisioning service.
+	// Nothing is stored yet, so no compensation needed if this fails.
+	result, err := r.provisioner.Onboard(ctx, gw.FactoryID, gw.FactoryKey, gw.SendFrequencyMs)
 	if err != nil {
-		r.compensate(ctx, gw, stageProvision, pub, sub)
 		r.metrics.ProvisioningErrors.Inc()
 		return fmt.Errorf("onboard: %w", err)
 	}
+
+	mgmtID, err := uuid.Parse(result.GatewayID)
+	if err != nil {
+		r.metrics.ProvisioningErrors.Inc()
+		return fmt.Errorf("parse gateway ID from provisioning: %w", err)
+	}
+	gw.ManagementGatewayID = mgmtID
+	gw.TenantID = result.TenantID
 	gw.CertPEM = result.CertPEM
 	gw.PrivateKeyPEM = result.PrivateKeyPEM
 	gw.EncryptionKey = result.AESKey
-	reachedStage = stageProvision
-
-	if err := r.store.UpdateProvisioned(ctx, gw.ID, result); err != nil {
-		r.compensate(ctx, gw, reachedStage, pub, sub)
-		r.metrics.ProvisioningErrors.Inc()
-		return fmt.Errorf("update provisioned gateway: %w", err)
-	}
 	gw.Provisioned = true
+
+	// Stage 2: Persist with the full provisioned state.
+	id, err := r.store.CreateGateway(ctx, *gw)
+	if err != nil {
+		r.metrics.ProvisioningErrors.Inc()
+		return fmt.Errorf("create gateway in store: %w", err)
+	}
+	gw.ID = id
 	reachedStage = stageStore
 
+	// Stage 3: Connect.
 	pub, sub, err = r.connector.Connect(ctx, gw.CertPEM, gw.PrivateKeyPEM, gw.TenantID, gw.ManagementGatewayID)
 	if err != nil {
 		r.compensate(ctx, gw, reachedStage, pub, sub)
@@ -369,6 +376,7 @@ func (r *GatewayRegistry) runProvisioningSaga(ctx context.Context, gw *domain.Si
 	}
 	reachedStage = stageConnect
 
+	// Stage 4: Start worker.
 	sensors, err := r.store.ListSensors(ctx, gw.ID)
 	if err != nil {
 		r.compensate(ctx, gw, reachedStage, pub, sub)
@@ -383,7 +391,6 @@ func (r *GatewayRegistry) runProvisioningSaga(ctx context.Context, gw *domain.Si
 	}
 
 	gw.Status = domain.Running
-
 	r.metrics.ProvisioningSuccess.Inc()
 	return nil
 }
@@ -398,10 +405,12 @@ func (r *GatewayRegistry) compensate(ctx context.Context, gw *domain.SimGateway,
 			_ = sub.Close()
 		}
 		fallthrough
-	case stageStore, stageProvision:
+	case stageStore:
 		if err := r.store.DeleteGateway(ctx, gw.ID); err != nil {
 			slog.Error("compensate: delete gateway failed", "err", err)
 		}
+	case stageProvision:
+		// nothing persisted yet — nothing to roll back
 	}
 }
 
@@ -427,15 +436,16 @@ func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway
 	}
 
 	w := NewGatewayWorker(deps)
-	w.Start(ctx)
-	done := w.done // capture channel value before goroutine spawn to avoid race with future Start() calls
+	w.Start(context.Background())
+	commandPumpCtx, cancelCommandPump := context.WithCancel(context.Background())
+	w.commandPumpCancel = cancelCommandPump
 
 	go func() {
 		defer func() { _ = sub.Close() }()
 		messages := sub.Messages()
 		for {
 			select {
-			case <-done:
+			case <-commandPumpCtx.Done():
 				return
 			case cmd, ok := <-messages:
 				if !ok {
@@ -479,6 +489,9 @@ func (r *GatewayRegistry) HandleDecommission(tenantID, managementGatewayID strin
 	delete(r.workers, mgmID)
 	r.mu.Unlock()
 
+	if w.commandPumpCancel != nil {
+		w.commandPumpCancel()
+	}
 	w.Stop(10 * time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -504,6 +517,9 @@ func (r *GatewayRegistry) StopAll(timeout time.Duration) {
 		wg.Add(1)
 		go func(worker *GatewayWorker) {
 			defer wg.Done()
+			if worker.commandPumpCancel != nil {
+				worker.commandPumpCancel()
+			}
 			worker.Stop(timeout)
 		}(w)
 	}

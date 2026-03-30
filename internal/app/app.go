@@ -107,7 +107,9 @@ func setupDecommissionListener(ctx context.Context, cfg *config.Config, registry
 			RootCAs:    caPool,
 			MinVersion: tls.VersionTLS13,
 		}),
-		natsio.MaxReconnects(-1),
+		natsio.MaxReconnects(60),
+		natsio.ReconnectWait(2*time.Second),
+		natsio.ReconnectJitter(500*time.Millisecond, 2*time.Second),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("global nats connect: %w", err)

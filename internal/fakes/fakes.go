@@ -170,7 +170,7 @@ type FakeProvisioningClient struct {
 	Err    error
 }
 
-func (p *FakeProvisioningClient) Onboard(_ context.Context, _, _, _ string, _ uuid.UUID) (domain.ProvisionResult, error) {
+func (p *FakeProvisioningClient) Onboard(_ context.Context, _, _ string, _ int) (domain.ProvisionResult, error) {
 	return p.Result, p.Err
 }
 

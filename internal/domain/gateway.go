@@ -73,9 +73,12 @@ type BulkCreateRequest struct {
 }
 
 type ProvisionResult struct {
-	CertPEM       []byte
-	PrivateKeyPEM []byte
-	AESKey        EncryptionKey
+	CertPEM         []byte
+	PrivateKeyPEM   []byte
+	AESKey          EncryptionKey
+	GatewayID       string
+	TenantID        string
+	SendFrequencyMs int
 }
 
 // Enums.

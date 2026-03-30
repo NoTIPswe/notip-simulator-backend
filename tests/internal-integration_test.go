@@ -54,9 +54,12 @@ func newIntegrationEnv(t *testing.T) *testEnv {
 		t.Fatalf("setup: create AES key: %v", err)
 	}
 	provisioner.Result = domain.ProvisionResult{
-		CertPEM:       []byte("fake-cert"),
-		PrivateKeyPEM: []byte("fake-key"),
-		AESKey:        aesKey,
+		CertPEM:         []byte("fake-cert"),
+		PrivateKeyPEM:   []byte("fake-key"),
+		AESKey:          aesKey,
+		GatewayID:       uuid.NewString(),
+		TenantID:        "tenant-1",
+		SendFrequencyMs: 50,
 	}
 
 	registry := app.NewGatewayRegistry(store, provisioner, connector, encryptor, clock, cfg, met)
@@ -198,7 +201,7 @@ func TestIntegration_CreateGateway_StoreCreateFailure(t *testing.T) {
 	}
 }
 
-func TestIntegration_CreateGateway_UpdateProvisionedFailure(t *testing.T) {
+func TestIntegration_CreateGateway_UpdateProvisionedFailure_NoEffect(t *testing.T) {
 	e := newIntegrationEnv(t)
 	e.store.ErrUpdateProvisioned = fakes.ErrSimulated
 
@@ -207,8 +210,8 @@ func TestIntegration_CreateGateway_UpdateProvisionedFailure(t *testing.T) {
 	})
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected 500 on UpdateProvisioned failure, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("expected 201 because UpdateProvisioned is no longer used, got %d", resp.StatusCode)
 	}
 }
 

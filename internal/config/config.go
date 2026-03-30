@@ -49,6 +49,16 @@ func Load() (*Config, error) {
 	cfg.GatewayBufferSize = getEnvInt("GATEWAY_BUFFER_SIZE", 1000)
 	cfg.RecoveryMode = getEnvBool("RECOVERY_MODE", false)
 
+	if cfg.DefaultSendFrequencyMs <= 0 {
+		slog.Warn("DEFAULT_SEND_FREQUENCY_MS must be > 0, using fallback", "value", cfg.DefaultSendFrequencyMs, "fallback", 5000)
+		cfg.DefaultSendFrequencyMs = 5000
+	}
+
+	if cfg.GatewayBufferSize <= 0 {
+		slog.Warn("GATEWAY_BUFFER_SIZE must be > 0, using fallback", "value", cfg.GatewayBufferSize, "fallback", 1000)
+		cfg.GatewayBufferSize = 1000
+	}
+
 	return cfg, nil
 }
 

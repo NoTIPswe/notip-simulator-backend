@@ -27,7 +27,7 @@ type GatewayStore interface {
 
 // Runs the full factory-key provisioning bootstrap. Internally generates an EC keypair and CSR, then calls POST /api/provision/onboard.
 type Onboarder interface {
-	Onboard(ctx context.Context, factoryID, factoryKey, tenantID string, managementGatewayID uuid.UUID) (domain.ProvisionResult, error)
+	Onboard(ctx context.Context, factoryID, factoryKey string, sendFrequencyMs int) (domain.ProvisionResult, error)
 }
 
 // Publishes a raw byte payload to a NATS subject.

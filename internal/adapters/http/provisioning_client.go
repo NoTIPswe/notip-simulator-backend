@@ -7,7 +7,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -15,8 +14,6 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
 )
@@ -33,39 +30,49 @@ func NewProvisioningServiceClient(baseURL string) *ProvisioningServiceClient {
 	}
 }
 
+type factoryCredentials struct {
+	FactoryID  string `json:"factoryId"`
+	FactoryKey string `json:"factoryKey"`
+}
+
 type onboardRequest struct {
-	FactoryID           string `json:"factoryId"`
-	FactoryKey          string `json:"factoryKey"`
-	TenantID            string `json:"tenantId"`
-	ManagementGatewayID string `json:"managementGatewayId"`
-	CSR                 string `json:"csr"`
+	Credentials     factoryCredentials `json:"credentials"`
+	CSR             string             `json:"csr"`
+	SendFrequencyMs int                `json:"sendFrequencyMs"`
+}
+
+type gatewayIdentity struct {
+	GatewayID string `json:"gatewayId"`
+	TenantID  string `json:"tenantId"`
 }
 
 type onboardResponse struct {
-	CertPEM string `json:"certPem"`
-	AESKey  string `json:"aesKey"`
+	CertPEM         string          `json:"certPem"`
+	AESKey          string          `json:"aesKey"`
+	Identity        gatewayIdentity `json:"identity"`
+	SendFrequencyMs int             `json:"sendFrequencyMs"`
 }
 
 func (c *ProvisioningServiceClient) Onboard(
 	ctx context.Context,
 	factoryID string,
 	factoryKey string,
-	tenantID string,
-	managementGatewayID uuid.UUID,
+	sendFrequencyMs int,
 ) (domain.ProvisionResult, error) {
-	// Generate key pair and CSR
-	keyPEM, csrPEM, err := c.generateKeypairAndCSR(tenantID, managementGatewayID)
+	// Generate key pair and CSR — identity is assigned by the provisioning service
+	keyPEM, csrPEM, err := c.generateKeypairAndCSR()
 	if err != nil {
 		return domain.ProvisionResult{}, fmt.Errorf("generate keypair and CSR: %w", err)
 	}
 
 	// Prepare request
 	reqBody := onboardRequest{
-		FactoryID:           factoryID,
-		FactoryKey:          factoryKey,
-		TenantID:            tenantID,
-		ManagementGatewayID: managementGatewayID.String(),
-		CSR:                 string(csrPEM),
+		Credentials: factoryCredentials{
+			FactoryID:  factoryID,
+			FactoryKey: factoryKey,
+		},
+		CSR:             string(csrPEM),
+		SendFrequencyMs: sendFrequencyMs,
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -110,14 +117,16 @@ func (c *ProvisioningServiceClient) Onboard(
 	}
 
 	return domain.ProvisionResult{
-		CertPEM:       []byte(onboardResp.CertPEM),
-		PrivateKeyPEM: keyPEM,
-		AESKey:        encKey,
+		CertPEM:         []byte(onboardResp.CertPEM),
+		PrivateKeyPEM:   keyPEM,
+		AESKey:          encKey,
+		GatewayID:       onboardResp.Identity.GatewayID,
+		TenantID:        onboardResp.Identity.TenantID,
+		SendFrequencyMs: onboardResp.SendFrequencyMs,
 	}, nil
 }
 
-func (c *ProvisioningServiceClient) generateKeypairAndCSR(tenantID string, managementGatewayID uuid.UUID) (keyPEM, csrPEM []byte, err error) {
-	// Generate ECDSA key pair
+func (c *ProvisioningServiceClient) generateKeypairAndCSR() (keyPEM, csrPEM []byte, err error) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate ECDSA key: %w", err)
@@ -132,15 +141,8 @@ func (c *ProvisioningServiceClient) generateKeypairAndCSR(tenantID string, manag
 		Bytes: keyBytes,
 	})
 
-	// Create CSR
-	csrTemplate := &x509.CertificateRequest{
-		Subject: pkix.Name{
-			CommonName:   managementGatewayID.String(),
-			Organization: []string{tenantID},
-		},
-	}
-
-	csrBytes, err := x509.CreateCertificateRequest(rand.Reader, csrTemplate, privateKey)
+	// Subject is intentionally empty — identity is embedded by the provisioning service when signing
+	csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, privateKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create CSR: %w", err)
 	}

@@ -55,9 +55,14 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool) bool {
 }
 
 func provisionResult() domain.ProvisionResult {
+	aesKey, _ := domain.NewEncryptionKey(make([]byte, 32))
 	return domain.ProvisionResult{
-		CertPEM:       []byte("fake-cert-pem"),
-		PrivateKeyPEM: []byte("fake-key-pem"),
+		CertPEM:         []byte("fake-cert-pem"),
+		PrivateKeyPEM:   []byte("fake-key-pem"),
+		AESKey:          aesKey,
+		GatewayID:       uuid.NewString(),
+		TenantID:        "tenant1",
+		SendFrequencyMs: 50,
 	}
 }
 
@@ -125,19 +130,19 @@ func TestCreateAndStart_ProvisionerFails_RollsBack(t *testing.T) {
 	}
 }
 
-func TestCreateAndStart_UpdateProvisionedFails_RollsBack(t *testing.T) {
+func TestCreateAndStart_UpdateProvisionedStoreErrorIgnored(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.store.ErrUpdateProvisioned = fakes.ErrSimulated
 	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
 
-	_, err := reg.CreateAndStart(context.Background(), makeCreateReq())
-	if err == nil {
-		t.Fatal("expected error when UpdateProvisioned fails")
+	gw, err := reg.CreateAndStart(context.Background(), makeCreateReq())
+	if err != nil {
+		t.Fatalf(unexpected_error, err)
 	}
-	gws, _ := d.store.ListGateways(context.Background())
-	if len(gws) != 0 {
-		t.Errorf("expected 0 gateways after rollback, got %d", len(gws))
+	if gw == nil || gw.Status != domain.Running {
+		t.Fatal("expected running gateway")
 	}
 }
 
@@ -685,19 +690,23 @@ func TestCompensate_ConnectorFails_PubAndSubClosed(t *testing.T) {
 	}
 }
 
-func TestCompensate_StoreFails_AfterProvision_GatewayDeleted(t *testing.T) {
+func TestCompensate_StoreUpdateProvisionedErrorIgnored(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.store.ErrUpdateProvisioned = fakes.ErrSimulated
 	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
 
-	_, err := reg.CreateAndStart(context.Background(), makeCreateReq())
-	if err == nil {
-		t.Fatal("expected error")
+	gw, err := reg.CreateAndStart(context.Background(), makeCreateReq())
+	if err != nil {
+		t.Fatalf(unexpected_error, err)
 	}
 	gws, _ := d.store.ListGateways(context.Background())
-	if len(gws) != 0 {
-		t.Errorf("expected 0 gateways after compensate(stageStore), got %d", len(gws))
+	if len(gws) != 1 {
+		t.Errorf("expected 1 gateway, got %d", len(gws))
+	}
+	if gw.Status != domain.Running {
+		t.Errorf("expected Running status, got %v", gw.Status)
 	}
 }
 

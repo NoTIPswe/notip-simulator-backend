@@ -14,7 +14,7 @@ import (
 const invalidGatewayIDFormat = "invalid gateway ID format"
 const contentType = "Content-Type"
 const contentTypeJSON = "application/json"
-const maxBodyBytes = 1 << 20 // 1 MiB
+const maxBodyBytes = 1 << 20 // 1 MiB, can be adjusted as needed
 const errFailedEncodeResponse = "failed to encode response"
 
 type GatewayHandler struct {

@@ -85,9 +85,12 @@ func newE2EEnv(t *testing.T) *e2eEnv {
 	// Fake provisioner so we don't need a real Provisioning API binary.
 	provisioner := &fakes.FakeProvisioningClient{
 		Result: domain.ProvisionResult{
-			CertPEM:       []byte("cert"),
-			PrivateKeyPEM: []byte("key"),
-			AESKey:        aesKey,
+			CertPEM:         []byte("cert"),
+			PrivateKeyPEM:   []byte("key"),
+			AESKey:          aesKey,
+			GatewayID:       uuid.NewString(),
+			TenantID:        "tenant-e2e",
+			SendFrequencyMs: 50,
 		},
 	}
 
