@@ -1,13 +1,20 @@
-BINARY  ?= notip-app
-TAG     ?= main
-FILE    ?= nats-contracts.yaml
-SERVICE ?= simulator-backend
+BINARY       ?= notip-simulator-backend
+REPO         ?= notipswe/notip-infra
+TAG          ?= main
+FILE         ?= nats-contracts.yaml
+SERVICE      ?= simulator-backend
+OPENAPI_REPO ?= notipswe/notip-provisioning-service
+OPENAPI_TAG  ?= main
+OPENAPI_FILE ?= openapi.yaml
+OPENAPI_AS   ?= provisioning-service-openapi.yaml
 
-.PHONY: all build run clean fmt vet lint test test-race cover fetch-contracts docker-build docker-run help
+OPENAPI_AS_FLAG := $(if $(OPENAPI_AS),--as $(OPENAPI_AS),)
+
+.PHONY: all build run clean fmt vet lint test test-race cover fetch-contracts fetch-openapi integration-test docker-build docker-run help
 
 ## Default
 
-all: fmt lint test build
+all: fmt lint test integration-test build
 
 ## Build
 
@@ -40,8 +47,12 @@ lint:
 ## Test
 
 test:
-	@echo "Running tests..."
-	go test -race -coverprofile=coverage.out ./...
+	@echo "Running unit tests..."
+	go test -coverprofile=coverage.out ./...
+
+integration-test:
+	@echo "Executing integration tests..."
+	go test -tags=integration -timeout=5m ./tests/integration/...
 
 cover:
 	@echo "Running tests with coverage..."
@@ -52,7 +63,11 @@ cover:
 
 fetch-contracts:
 	@echo "Fetching contracts..."
-	bash scripts/generate-asyncapi.sh --tag $(TAG) --file $(FILE) --service $(SERVICE)
+	bash scripts/generate-asyncapi.sh --repo $(REPO) --tag $(TAG) --file $(FILE) --service $(SERVICE)
+
+fetch-openapi:
+	@echo "Fetching OpenAPI spec..."
+	bash scripts/generate-openapi.sh --repo $(OPENAPI_REPO) --tag $(OPENAPI_TAG) --file $(OPENAPI_FILE) $(OPENAPI_AS_FLAG)
 
 ## Docker
 
@@ -69,15 +84,17 @@ docker-run:
 help:
 	@echo "Usage: make <target>"
 	@echo ""
-	@echo "  all            fmt → lint → test → build"
-	@echo "  build          compile the binary"
-	@echo "  run            go run ."
-	@echo "  clean          remove binary and coverage report"
-	@echo "  fmt            go fmt ./..."
-	@echo "  vet            go vet ./..."
-	@echo "  lint           golangci-lint run"
-	@echo "  test           run all tests with -race"
-	@echo "  cover          run tests and open HTML coverage report"
-	@echo "  fetch-contracts fetch and generate AsyncAPI contracts"
-	@echo "  docker-build   build production Docker image"
-	@echo "  docker-run     run the Docker image"
+	@echo "  all              fmt → lint → test → integration-test → build"
+	@echo "  build            compile the binary"
+	@echo "  run              go run ."
+	@echo "  clean            remove binary and coverage report"
+	@echo "  fmt              go fmt ./..."
+	@echo "  vet              go vet ./..."
+	@echo "  lint             golangci-lint run"
+	@echo "  test             run unit tests with coverage"
+	@echo "  integration-test run integration tests (tag=integration, timeout=5m)"
+	@echo "  cover            run tests and open HTML coverage report"
+	@echo "  fetch-contracts  fetch and generate AsyncAPI contracts"
+	@echo "  fetch-openapi    fetch OpenAPI spec"
+	@echo "  docker-build     build production Docker image"
+	@echo "  docker-run       run the Docker image"

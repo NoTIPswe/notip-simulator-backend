@@ -1,0 +1,54 @@
+openapi: 3.0.0
+paths:
+  /provision/onboard:
+    post:
+      operationId: ProvisioningController_onboard
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardRequestDto'
+      responses:
+        '201':
+          description: ''
+      tags:
+        - Provisioning
+info:
+  title: NoTIP Provisioning Service
+  description: NoTIP Provisioning Service OpenAPI specification
+  version: 1.1.0
+  contact: {}
+tags: []
+servers: []
+components:
+  schemas:
+    OnboardRequestDto:
+      type: object
+      properties:
+        factory_id:
+          type: string
+          description: Identificativo univoco del gateway (Opaque identifier)
+          example: GW-NOTIP-2026-001
+        factory_key:
+          type: string
+          description: Segreto monouso pre-condiviso per l'autenticazione in fabbrica
+          example: super-secret-factory-key
+          writeOnly: true
+        csr:
+          type: string
+          description: Certificate Signing Request in formato PEM
+          example: |-
+            -----BEGIN CERTIFICATE REQUEST-----
+            MIIB... 
+            -----END CERTIFICATE REQUEST-----
+        send_frequency_ms:
+          type: number
+          description: Frequenza di invio telemetria del gateway in millisecondi
+          example: 5000
+      required:
+        - factory_id
+        - factory_key
+        - csr
+        - send_frequency_ms

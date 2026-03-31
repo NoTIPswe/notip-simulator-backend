@@ -1,5 +1,5 @@
 # --- Build Outputs ---
-notip-app
+notip-simulator-backend
 tmp/
 
 # --- Test & Coverage ---
