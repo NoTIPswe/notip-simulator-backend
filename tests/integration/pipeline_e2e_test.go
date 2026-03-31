@@ -121,7 +121,7 @@ func newE2EEnv(t *testing.T) *e2eEnv {
 // TestE2E_CreateGateway_TelemetryArrivesOnNATS is the primary end-to-end test.
 // It creates a gateway through the registry, adds a sensor, and verifies that
 // encrypted telemetry envelopes arrive on the real NATS broker.
-func TestE2E_CreateGateway_TelemetryArrivesOnNATS(t *testing.T) {
+func TestE2ECreateGatewayTelemetryArrivesOnNATS(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
@@ -180,7 +180,7 @@ func TestE2E_CreateGateway_TelemetryArrivesOnNATS(t *testing.T) {
 
 // TestE2E_StopGateway_StopsPublishing verifies that after Stop, the worker
 // no longer publishes messages to NATS.
-func TestE2E_StopGateway_StopsPublishing(t *testing.T) {
+func TestE2EStopGatewayStopsPublishing(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
@@ -220,7 +220,7 @@ func TestE2E_StopGateway_StopsPublishing(t *testing.T) {
 
 // TestE2E_DeleteGateway_RemovedFromStore verifies the full decommission
 // path: worker stops + gateway deleted from real SQLite.
-func TestE2E_DeleteGateway_RemovedFromStore(t *testing.T) {
+func TestE2EDeleteGatewayRemovedFromStore(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
@@ -238,7 +238,7 @@ func TestE2E_DeleteGateway_RemovedFromStore(t *testing.T) {
 
 // TestE2E_HandleDecommission_NATSEvent simulates the NATS-driven decommission
 // path (HandleDecommission called by NATSDecommissionListener).
-func TestE2E_HandleDecommission_NATSEvent(t *testing.T) {
+func TestE2EHandleDecommissionNATSEvent(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
@@ -260,7 +260,7 @@ func TestE2E_HandleDecommission_NATSEvent(t *testing.T) {
 // TestE2E_RestoreAll_RestartsGatewayAndPublishes tests the crash-recovery path.
 // It inserts a provisioned gateway directly into SQLite (simulating a previous run),
 // calls RestoreAll, and verifies that the worker resumes publishing.
-func TestE2E_RestoreAll_RestartsGatewayAndPublishes(t *testing.T) {
+func TestE2ERestoreAllRestartsGatewayAndPublishes(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
@@ -292,7 +292,7 @@ func TestE2E_RestoreAll_RestartsGatewayAndPublishes(t *testing.T) {
 
 // TestE2E_BulkCreate_AllGatewaysRunning verifies that BulkCreateGateways
 // starts N workers concurrently and all of them end up in Running state.
-func TestE2E_BulkCreate_AllGatewaysRunning(t *testing.T) {
+func TestE2EBulkCreateAllGatewaysRunning(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
@@ -323,7 +323,7 @@ func TestE2E_BulkCreate_AllGatewaysRunning(t *testing.T) {
 
 // TestE2E_InjectNetworkDegradation_WorkerAcceptsCommand verifies that anomaly
 // injection via InjectGatewayAnomaly reaches the running worker without error.
-func TestE2E_InjectNetworkDegradation_WorkerAcceptsCommand(t *testing.T) {
+func TestE2EInjectNetworkDegradationWorkerAcceptsCommand(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
