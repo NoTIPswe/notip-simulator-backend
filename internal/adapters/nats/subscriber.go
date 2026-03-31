@@ -32,7 +32,7 @@ func NewNATSGatewaySubscriber(js nats.JetStreamContext, tenantID, managementGate
 		ackSubject: ackSubject,
 	}
 
-	sub, err := js.Subscribe(subject, subscriber.handleMsg, nats.Durable(durableName), nats.MaxDeliver(3))
+	sub, err := js.Subscribe(subject, subscriber.handleMsg, nats.Durable(durableName), nats.MaxDeliver(3), nats.ManualAck())
 	if err != nil {
 		return nil, err
 	}

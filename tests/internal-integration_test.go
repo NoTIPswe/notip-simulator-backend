@@ -76,7 +76,7 @@ func newIntegrationEnv(t *testing.T) *testEnv {
 	mux.HandleFunc("GET /sim/gateways/{id}", gwHandler.Get)
 	mux.HandleFunc("POST /sim/gateways/{id}/start", gwHandler.Start)
 	mux.HandleFunc("POST /sim/gateways/{id}/stop", gwHandler.Stop)
-	mux.HandleFunc("DELETE /sim/gateways/{id}", gwHandler.Decommission)
+	mux.HandleFunc("DELETE /sim/gateways/{id}", gwHandler.Delete)
 	mux.HandleFunc("POST /sim/gateways/{id}/sensors", sensorHandler.Add)
 	mux.HandleFunc("GET /sim/gateways/{id}/sensors", sensorHandler.List)
 	mux.HandleFunc("DELETE /sim/sensors/{sensorId}", sensorHandler.Delete)
@@ -121,8 +121,6 @@ func (e *testEnv) postJSON(t *testing.T, path string, body any) *http.Response {
 func (e *testEnv) createGateway(t *testing.T) *domain.SimGateway {
 	t.Helper()
 	resp := e.postJSON(t, "/sim/gateways", domain.CreateGatewayRequest{
-		Name:            "test-gw",
-		TenantID:        "tenant-1",
 		FactoryID:       "factory-1",
 		FactoryKey:      "key-1",
 		SerialNumber:    "SN-001",
@@ -164,7 +162,7 @@ func TestIntegration_CreateGateway_ProvisioningFailure(t *testing.T) {
 	e.provisioner.Err = fakes.ErrSimulated
 
 	resp := e.postJSON(t, "/sim/gateways", domain.CreateGatewayRequest{
-		TenantID: "tenant-1", FactoryID: "f1", FactoryKey: "k1",
+		FactoryID: "f1", FactoryKey: "k1",
 	})
 	defer func() { _ = resp.Body.Close() }()
 
@@ -178,7 +176,7 @@ func TestIntegration_CreateGateway_ConnectorFailure(t *testing.T) {
 	e.connector.Err = fakes.ErrSimulated
 
 	resp := e.postJSON(t, "/sim/gateways", domain.CreateGatewayRequest{
-		TenantID: "tenant-1", FactoryID: "f1", FactoryKey: "k1",
+		FactoryID: "f1", FactoryKey: "k1",
 	})
 	defer func() { _ = resp.Body.Close() }()
 
@@ -192,7 +190,7 @@ func TestIntegration_CreateGateway_StoreCreateFailure(t *testing.T) {
 	e.store.ErrCreateGateway = fakes.ErrSimulated
 
 	resp := e.postJSON(t, "/sim/gateways", domain.CreateGatewayRequest{
-		TenantID: "tenant-1", FactoryID: "f1", FactoryKey: "k1",
+		FactoryID: "f1", FactoryKey: "k1",
 	})
 	defer func() { _ = resp.Body.Close() }()
 
@@ -206,7 +204,7 @@ func TestIntegration_CreateGateway_UpdateProvisionedFailure_NoEffect(t *testing.
 	e.store.ErrUpdateProvisioned = fakes.ErrSimulated
 
 	resp := e.postJSON(t, "/sim/gateways", domain.CreateGatewayRequest{
-		TenantID: "tenant-1", FactoryID: "f1", FactoryKey: "k1",
+		FactoryID: "f1", FactoryKey: "k1",
 	})
 	defer func() { _ = resp.Body.Close() }()
 
@@ -389,7 +387,7 @@ func TestIntegration_StartGateway_InvalidID(t *testing.T) {
 	}
 }
 
-func TestIntegration_DecommissionGateway_Success(t *testing.T) {
+func TestIntegration_DeleteGateway_Success(t *testing.T) {
 	e := newIntegrationEnv(t)
 	gw := e.createGateway(t)
 
@@ -410,7 +408,7 @@ func TestIntegration_DecommissionGateway_Success(t *testing.T) {
 	}
 }
 
-func TestIntegration_DecommissionGateway_NotFound(t *testing.T) {
+func TestIntegration_DeleteGateway_NotFound(t *testing.T) {
 	e := newIntegrationEnv(t)
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete,
@@ -432,8 +430,7 @@ func TestIntegration_BulkCreate_AllSuccess(t *testing.T) {
 	e := newIntegrationEnv(t)
 
 	resp := e.postJSON(t, "/sim/gateways/bulk", domain.BulkCreateRequest{
-		Count:    3,
-		TenantID: "tenant-bulk",
+		Count: 3,
 	})
 	defer func() { _ = resp.Body.Close() }()
 
@@ -457,8 +454,7 @@ func TestIntegration_BulkCreate_AllFailure(t *testing.T) {
 	e.provisioner.Err = fakes.ErrSimulated // make every provisioning call fail.
 
 	resp := e.postJSON(t, "/sim/gateways/bulk", domain.BulkCreateRequest{
-		Count:    2,
-		TenantID: "tenant-bulk",
+		Count: 2,
 	})
 	defer func() { _ = resp.Body.Close() }()
 

@@ -62,7 +62,7 @@ func TestGatewayHandler_Create_201(t *testing.T) {
 	h := simhttp.NewGatewayHandler(lc)
 
 	req := newReq(http.MethodPost, simHelper, jsonBody(t, domain.CreateGatewayRequest{
-		TenantID: "t1", FactoryID: "fid", FactoryKey: "fkey",
+		FactoryID: "fid", FactoryKey: "fkey",
 	}))
 	w := httptest.NewRecorder()
 	h.Create(w, req)
@@ -80,7 +80,7 @@ func TestGatewayHandler_Create_ServiceError_500(t *testing.T) {
 	}
 	h := simhttp.NewGatewayHandler(lc)
 
-	req := newReq(http.MethodPost, simHelper, jsonBody(t, domain.CreateGatewayRequest{TenantID: "t1"}))
+	req := newReq(http.MethodPost, simHelper, jsonBody(t, domain.CreateGatewayRequest{}))
 	w := httptest.NewRecorder()
 	h.Create(w, req)
 
@@ -168,14 +168,14 @@ func TestGatewayHandler_Stop_204(t *testing.T) {
 	}
 }
 
-func TestGatewayHandler_Decommission_204(t *testing.T) {
+func TestGatewayHandler_Delete_204(t *testing.T) {
 	id := uuid.New()
 	lc := &fakes.FakeGatewayLifecycleService{
-		DecommissionFn: func(_ context.Context, mID uuid.UUID) error { return nil },
+		DeleteFn: func(_ context.Context, mID uuid.UUID) error { return nil },
 	}
 	h := simhttp.NewGatewayHandler(lc)
 
-	w := serveWithMux("DELETE /sim/gateways/{id}", h.Decommission,
+	w := serveWithMux("DELETE /sim/gateways/{id}", h.Delete,
 		newReq(http.MethodDelete, simHelper2+id.String(), nil))
 	if w.Code != http.StatusNoContent {
 		t.Errorf(Helper204, w.Code)
@@ -196,7 +196,7 @@ func TestGatewayHandler_BulkCreate_201(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	h.BulkCreate(w, newReq(http.MethodPost, "/sim/gateways/bulk", jsonBody(t, domain.BulkCreateRequest{
-		Count: 2, TenantID: "t1", FactoryID: "fid", FactoryKey: "fkey",
+		Count: 2, FactoryID: "fid", FactoryKey: "fkey",
 	})))
 	if w.Code != http.StatusCreated && w.Code != http.StatusMultiStatus {
 		t.Errorf("want 201 or 207, got %d", w.Code)
@@ -413,22 +413,22 @@ func TestGatewayHandler_Stop_ServiceError_500(t *testing.T) {
 	}
 }
 
-func TestGatewayHandler_Decommission_InvalidUUID_400(t *testing.T) {
+func TestGatewayHandler_Delete_InvalidUUID_400(t *testing.T) {
 	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
-	w := serveWithMux("DELETE /sim/gateways/{id}", h.Decommission,
+	w := serveWithMux("DELETE /sim/gateways/{id}", h.Delete,
 		newReq(http.MethodDelete, "/sim/gateways/not-a-uuid", nil))
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("want 400, got %d", w.Code)
 	}
 }
 
-func TestGatewayHandler_Decommission_ServiceError_500(t *testing.T) {
+func TestGatewayHandler_Delete_ServiceError_500(t *testing.T) {
 	id := uuid.New()
 	lc := &fakes.FakeGatewayLifecycleService{
-		DecommissionFn: func(_ context.Context, _ uuid.UUID) error { return fakes.ErrSimulated },
+		DeleteFn: func(_ context.Context, _ uuid.UUID) error { return fakes.ErrSimulated },
 	}
 	h := simhttp.NewGatewayHandler(lc)
-	w := serveWithMux("DELETE /sim/gateways/{id}", h.Decommission,
+	w := serveWithMux("DELETE /sim/gateways/{id}", h.Delete,
 		newReq(http.MethodDelete, simHelper2+id.String(), nil))
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("want 500, got %d", w.Code)
@@ -487,7 +487,7 @@ func TestGatewayHandler_BulkCreate_PartialErrors_207(t *testing.T) {
 	h := simhttp.NewGatewayHandler(lc)
 	w := httptest.NewRecorder()
 	h.BulkCreate(w, newReq(http.MethodPost, "/sim/gateways/bulk", jsonBody(t, domain.BulkCreateRequest{
-		Count: 2, TenantID: "t1",
+		Count: 2,
 	})))
 	if w.Code != http.StatusMultiStatus {
 		t.Errorf("want 207, got %d", w.Code)

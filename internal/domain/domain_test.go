@@ -134,13 +134,9 @@ func TestTelemetryEnvelope_ZeroValue_NoPanic(t *testing.T) {
 
 func TestCreateGatewayRequest_Fields(t *testing.T) {
 	r := domain.CreateGatewayRequest{
-		TenantID:        "t1",
 		FactoryID:       "fid",
 		FactoryKey:      "fkey",
 		SendFrequencyMs: 1000,
-	}
-	if r.TenantID != "t1" {
-		t.Error("TenantID not set")
 	}
 	if r.FactoryID != "fid" {
 		t.Error("FactoryID not set")

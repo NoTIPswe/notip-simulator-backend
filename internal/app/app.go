@@ -107,9 +107,19 @@ func setupDecommissionListener(ctx context.Context, cfg *config.Config, registry
 			RootCAs:    caPool,
 			MinVersion: tls.VersionTLS13,
 		}),
-		natsio.MaxReconnects(60),
+		natsio.MaxReconnects(-1),
 		natsio.ReconnectWait(2*time.Second),
 		natsio.ReconnectJitter(500*time.Millisecond, 2*time.Second),
+		natsio.PingInterval(20*time.Second),
+		natsio.DisconnectErrHandler(func(_ *natsio.Conn, err error) {
+			slog.Warn("global NATS disconnected", "error", err)
+		}),
+		natsio.ReconnectHandler(func(_ *natsio.Conn) {
+			slog.Info("global NATS reconnected")
+		}),
+		natsio.ClosedHandler(func(_ *natsio.Conn) {
+			slog.Error("global NATS connection permanently closed")
+		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("global nats connect: %w", err)

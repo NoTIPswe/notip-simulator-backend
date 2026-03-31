@@ -42,7 +42,7 @@ func TestProvisioningClient_Onboard_Success(t *testing.T) {
 	defer srv.Close()
 
 	client := simhttp.NewProvisioningServiceClient(srv.URL)
-	result, err := client.Onboard(context.Background(), "fid", "fkey", 100)
+	result, err := client.Onboard(context.Background(), "fid", "fkey", 100, "fw-1.0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestProvisioningClient_Onboard_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	client := simhttp.NewProvisioningServiceClient(srv.URL)
-	_, err := client.Onboard(context.Background(), "fid", "fkey", 100)
+	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, "fw-1.0")
 	if err == nil {
 		t.Error("expected error on 500, got nil")
 	}
@@ -89,7 +89,7 @@ func TestProvisioningClient_Onboard_InvalidAESKey(t *testing.T) {
 	defer srv.Close()
 
 	client := simhttp.NewProvisioningServiceClient(srv.URL)
-	_, err := client.Onboard(context.Background(), "fid", "fkey", 100)
+	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, "fw-1.0")
 	if err == nil {
 		t.Error("expected error for invalid AES key length, got nil")
 	}
@@ -97,7 +97,7 @@ func TestProvisioningClient_Onboard_InvalidAESKey(t *testing.T) {
 
 func TestProvisioningClient_Onboard_BadURL(t *testing.T) {
 	client := simhttp.NewProvisioningServiceClient("http://localhost:0")
-	_, err := client.Onboard(context.Background(), "fid", "fkey", 100)
+	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, "fw-1.0")
 	if err == nil {
 		t.Error("expected error for unreachable server, got nil")
 	}
@@ -111,7 +111,7 @@ func TestProvisioningClient_Onboard_BadJSON(t *testing.T) {
 	defer srv.Close()
 
 	client := simhttp.NewProvisioningServiceClient(srv.URL)
-	_, err := client.Onboard(context.Background(), "fid", "fkey", 100)
+	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, "fw-1.0")
 	if err == nil {
 		t.Error("expected error for invalid JSON response, got nil")
 	}
@@ -133,7 +133,7 @@ func TestProvisioningClient_Onboard_InvalidBase64Key(t *testing.T) {
 	defer srv.Close()
 
 	client := simhttp.NewProvisioningServiceClient(srv.URL)
-	_, err := client.Onboard(context.Background(), "fid", "fkey", 100)
+	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, "fw-1.0")
 	if err == nil {
 		t.Error("expected error for invalid base64, got nil")
 	}

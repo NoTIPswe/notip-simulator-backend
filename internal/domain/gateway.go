@@ -51,8 +51,6 @@ type TelemetryEnvelope struct {
 // CreateGatewayRequest is the application-layer command for creating a gateway.
 // JSON tags reflect the camelCase contract used by HTTP clients.
 type CreateGatewayRequest struct {
-	Name            string `json:"name"`
-	TenantID        string `json:"tenantId"`
 	FactoryID       string `json:"factoryId"`
 	FactoryKey      string `json:"factoryKey"`
 	SerialNumber    string `json:"serialNumber"`
@@ -64,7 +62,6 @@ type CreateGatewayRequest struct {
 // BulkCreateRequest is the application-layer command for batch gateway creation.
 type BulkCreateRequest struct {
 	Count           int    `json:"count"`
-	TenantID        string `json:"tenantId"`
 	FactoryID       string `json:"factoryId"`
 	FactoryKey      string `json:"factoryKey"`
 	Model           string `json:"model"`

@@ -14,7 +14,7 @@ type GatewayLifecycleService interface {
 	BulkCreateGateways(ctx context.Context, req domain.BulkCreateRequest) ([]*domain.SimGateway, []error)
 	Start(ctx context.Context, managementID uuid.UUID) error
 	Stop(ctx context.Context, managementID uuid.UUID) error
-	Decommission(ctx context.Context, managementID uuid.UUID) error
+	Delete(ctx context.Context, managementID uuid.UUID) error
 	ListGateways(ctx context.Context) ([]*domain.SimGateway, error)
 	GetGateway(ctx context.Context, managementID uuid.UUID) (*domain.SimGateway, error)
 }

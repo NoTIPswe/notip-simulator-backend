@@ -26,13 +26,17 @@ func (l *NATSDecommissionListener) Run(ctx context.Context) error {
 	sub, err := l.js.Subscribe("gateway.decommissioned.>", func(msg *nats.Msg) {
 		l.dispatchFromSubject(msg.Subject)
 		_ = msg.Ack()
-	})
+	},
+		nats.Durable("simulator-decommission"),
+		nats.ManualAck(),
+		nats.DeliverNew(), // Only receive decommission events that occur after this listener starts.
+	)
 	if err != nil {
 		return err
 	}
 
 	<-ctx.Done()
-	return sub.Unsubscribe()
+	return sub.Drain()
 }
 
 func (l *NATSDecommissionListener) dispatchFromSubject(subject string) {

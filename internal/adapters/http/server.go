@@ -31,7 +31,7 @@ func NewHTTPServer(
 	mux.HandleFunc("GET /sim/gateways/{id}", gwHandler.Get)
 	mux.HandleFunc("POST /sim/gateways/{id}/start", gwHandler.Start)
 	mux.HandleFunc("POST /sim/gateways/{id}/stop", gwHandler.Stop)
-	mux.HandleFunc("DELETE /sim/gateways/{id}", gwHandler.Decommission)
+	mux.HandleFunc("DELETE /sim/gateways/{id}", gwHandler.Delete)
 
 	// Sensors.
 	mux.HandleFunc("POST /sim/gateways/{id}/sensors", sensorHandler.Add)

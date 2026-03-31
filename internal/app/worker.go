@@ -50,6 +50,7 @@ type GatewayWorker struct {
 	generators []generator.Generator
 	buffer     *MessageBuffer
 	publisher  ports.GatewayPublisher
+	closeNC    func() error
 	encryptor  ports.Encryptor
 	clock      ports.Nower
 
@@ -73,6 +74,7 @@ type WorkerDeps struct {
 	Sensors    []*domain.SimSensor
 	Generators []generator.Generator
 	Publisher  ports.GatewayPublisher
+	CloseNC    func() error
 	Encryptor  ports.Encryptor
 	Clock      ports.Nower
 	Buffer     *MessageBuffer
@@ -85,6 +87,7 @@ func NewGatewayWorker(deps WorkerDeps) *GatewayWorker {
 		sensors:    deps.Sensors,
 		generators: deps.Generators,
 		publisher:  deps.Publisher,
+		closeNC:    deps.CloseNC,
 		encryptor:  deps.Encryptor,
 		clock:      deps.Clock,
 		buffer:     deps.Buffer,
@@ -128,6 +131,9 @@ func (w *GatewayWorker) Stop(timeout time.Duration) {
 	}
 	if w.publisherClosed.CompareAndSwap(false, true) {
 		_ = w.publisher.Close()
+		if w.closeNC != nil {
+			_ = w.closeNC()
+		}
 	}
 }
 
@@ -170,14 +176,14 @@ func (w *GatewayWorker) sensorLoop(ctx context.Context) {
 		case cmd := <-w.commandCh:
 			w.handleIncomingCommand(ctx, cmd)
 		case <-tickC:
-			w.processTick(ctx, ticker)
+			w.processTick(ticker)
 		}
 	}
 }
 
-func (w *GatewayWorker) processTick(ctx context.Context, ticker *time.Ticker) {
+func (w *GatewayWorker) processTick(ticker *time.Ticker) {
 	w.drainControlChannels(ticker)
-	w.checkAnomalyExpiry(ctx)
+	w.checkAnomalyExpiry()
 	w.publishSensorData()
 }
 
@@ -224,7 +230,7 @@ drainOutliers:
 	}
 }
 
-func (w *GatewayWorker) checkAnomalyExpiry(ctx context.Context) {
+func (w *GatewayWorker) checkAnomalyExpiry() {
 	if w.activeAnomaly == nil {
 		return
 	}
@@ -234,14 +240,6 @@ func (w *GatewayWorker) checkAnomalyExpiry(ctx context.Context) {
 
 	if w.clock.Now().Before(w.activeAnomaly.expiresAt) {
 		return
-	}
-
-	if w.activeAnomaly.anomalyType == domain.Disconnect {
-		if err := w.publisher.Reconnect(ctx); err != nil {
-			slog.Error("reconnect failed", "gatewayID", w.gateway.ManagementGatewayID, "err", err)
-			return
-		}
-		w.publisherClosed.Store(false)
 	}
 	w.activeAnomaly = nil
 }
@@ -302,10 +300,6 @@ func (w *GatewayWorker) handleAnomalyCommand(cmd domain.GatewayAnomalyCommand) {
 	case domain.Disconnect:
 		if cmd.Disconnect != nil {
 			state.expiresAt = w.clock.Now().Add(time.Duration(cmd.Disconnect.DurationSeconds) * time.Second)
-		}
-
-		if w.publisherClosed.CompareAndSwap(false, true) {
-			_ = w.publisher.Close()
 		}
 	}
 	w.activeAnomaly = state

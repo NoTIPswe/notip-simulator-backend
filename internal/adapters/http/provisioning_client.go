@@ -39,6 +39,7 @@ type onboardRequest struct {
 	Credentials     factoryCredentials `json:"credentials"`
 	CSR             string             `json:"csr"`
 	SendFrequencyMs int                `json:"sendFrequencyMs"`
+	FirmwareVersion string             `json:"firmwareVersion"`
 }
 
 type gatewayIdentity struct {
@@ -58,6 +59,7 @@ func (c *ProvisioningServiceClient) Onboard(
 	factoryID string,
 	factoryKey string,
 	sendFrequencyMs int,
+	firmwareVersion string,
 ) (domain.ProvisionResult, error) {
 	// Generate key pair and CSR — identity is assigned by the provisioning service
 	keyPEM, csrPEM, err := c.generateKeypairAndCSR()
@@ -73,6 +75,7 @@ func (c *ProvisioningServiceClient) Onboard(
 		},
 		CSR:             string(csrPEM),
 		SendFrequencyMs: sendFrequencyMs,
+		FirmwareVersion: firmwareVersion,
 	}
 
 	body, err := json.Marshal(reqBody)

@@ -5,7 +5,7 @@ import "sync"
 type ConstantGenerator struct {
 	value           float64
 	outlierOverride *float64
-	mu              sync.RWMutex
+	mu              sync.Mutex
 }
 
 func NewConstantGenerator(min, max float64) *ConstantGenerator {

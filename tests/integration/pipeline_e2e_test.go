@@ -42,15 +42,16 @@ func (c *plainNATSConnector) Connect(
 	_ []byte, // keyPEM  — ignored in tests
 	_ string,
 	_ uuid.UUID,
-) (ports.GatewayPublisher, ports.CommandSubscription, error) {
+) (ports.GatewayPublisher, ports.CommandSubscription, func() error, error) {
 	nc, err := nats.Connect(c.natsURI,
 		nats.Timeout(5*time.Second),
 		nats.MaxReconnects(5),
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return &realPublisher{nc: nc}, &noopCommandSubscription{}, nil
+	closeNC := func() error { nc.Close(); return nil }
+	return &realPublisher{nc: nc}, &noopCommandSubscription{}, closeNC, nil
 }
 
 // noopCommandSubscription never delivers commands — sufficient for E2E publish tests.
@@ -135,8 +136,6 @@ func TestE2E_CreateGateway_TelemetryArrivesOnNATS(t *testing.T) {
 	t.Cleanup(func() { sub.Unsubscribe() }) //nolint:errcheck
 
 	gw, err := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
-		Name:            "e2e-gw",
-		TenantID:        "tenant-e2e",
 		FactoryID:       "f1",
 		FactoryKey:      "k1",
 		SerialNumber:    "SN-E2E",
@@ -187,7 +186,7 @@ func TestE2E_StopGateway_StopsPublishing(t *testing.T) {
 	ctx := context.Background()
 
 	gw, err := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
-		TenantID: "tenant-stop", FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
+		FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
 	})
 	require.NoError(t, err)
 
@@ -205,7 +204,8 @@ func TestE2E_StopGateway_StopsPublishing(t *testing.T) {
 	// Subscribe after stop — should receive nothing.
 	subConn := connectNATS(t, e.natsURI)
 	msgCh := make(chan *nats.Msg, 5)
-	sub, err := subConn.Subscribe("telemetry.data.tenant-stop.>", func(m *nats.Msg) {
+	subject := "telemetry.data." + gw.TenantID + ".>"
+	sub, err := subConn.Subscribe(subject, func(m *nats.Msg) {
 		msgCh <- m
 	})
 	require.NoError(t, err)
@@ -219,18 +219,18 @@ func TestE2E_StopGateway_StopsPublishing(t *testing.T) {
 	}
 }
 
-// TestE2E_DecommissionGateway_RemovedFromStore verifies the full decommission
+// TestE2E_DeleteGateway_RemovedFromStore verifies the full decommission
 // path: worker stops + gateway deleted from real SQLite.
-func TestE2E_DecommissionGateway_RemovedFromStore(t *testing.T) {
+func TestE2E_DeleteGateway_RemovedFromStore(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
 	gw, err := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
-		TenantID: "tenant-decomm", FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
+		FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, e.registry.Decommission(ctx, gw.ManagementGatewayID))
+	require.NoError(t, e.registry.Delete(ctx, gw.ManagementGatewayID))
 
 	// The row must be gone from SQLite.
 	_, err = e.store.GetGateway(ctx, gw.ID)
@@ -244,7 +244,7 @@ func TestE2E_HandleDecommission_NATSEvent(t *testing.T) {
 	ctx := context.Background()
 
 	gw, err := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
-		TenantID: "tenant-nats-decomm", FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
+		FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
 	})
 	require.NoError(t, err)
 
@@ -299,8 +299,7 @@ func TestE2E_BulkCreate_AllGatewaysRunning(t *testing.T) {
 
 	const count = 5
 	gateways, errs := e.registry.BulkCreateGateways(ctx, domain.BulkCreateRequest{
-		Count:    count,
-		TenantID: "tenant-bulk",
+		Count: count,
 	})
 
 	for i, err := range errs {
@@ -330,7 +329,7 @@ func TestE2E_InjectNetworkDegradation_WorkerAcceptsCommand(t *testing.T) {
 	ctx := context.Background()
 
 	gw, err := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
-		TenantID: "tenant-anomaly", FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
+		FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
 	})
 	require.NoError(t, err)
 

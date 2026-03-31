@@ -68,7 +68,6 @@ func provisionResult() domain.ProvisionResult {
 
 func makeCreateReq() domain.CreateGatewayRequest {
 	return domain.CreateGatewayRequest{
-		TenantID:        "tenant1",
 		FactoryID:       "factory1",
 		FactoryKey:      "fkey1",
 		SerialNumber:    "SN001",
@@ -173,7 +172,6 @@ func TestBulkCreate_AllSucceed(t *testing.T) {
 
 	gws, errs := reg.BulkCreateGateways(context.Background(), domain.BulkCreateRequest{
 		Count:           3,
-		TenantID:        "t1",
 		FactoryID:       "fid",
 		FactoryKey:      "fkey",
 		Model:           "M1",
@@ -198,7 +196,7 @@ func TestBulkCreate_AllFail(t *testing.T) {
 	reg := newTestRegistry(d)
 
 	_, errs := reg.BulkCreateGateways(context.Background(), domain.BulkCreateRequest{
-		Count: 2, TenantID: "t1", FactoryID: "fid", FactoryKey: "fkey",
+		Count: 2, FactoryID: "fid", FactoryKey: "fkey",
 	})
 	if len(errs) == 0 {
 		t.Fatal("expected errors for all failed creations")
@@ -227,16 +225,16 @@ func TestStop_NotFound(t *testing.T) {
 	}
 }
 
-//Decommission.
+//Delete.
 
-func TestDecommission_Success(t *testing.T) {
+func TestDelete_Success(t *testing.T) {
 	setupTestLogger(t)
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	err := reg.Decommission(context.Background(), gw.ManagementGatewayID)
+	err := reg.Delete(context.Background(), gw.ManagementGatewayID)
 	if err != nil {
 		t.Fatalf(unexpected_error, err)
 	}
@@ -246,9 +244,9 @@ func TestDecommission_Success(t *testing.T) {
 	}
 }
 
-func TestDecommission_NotFound(t *testing.T) {
+func TestDelete_NotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
-	err := reg.Decommission(context.Background(), uuid.New())
+	err := reg.Delete(context.Background(), uuid.New())
 	if err == nil {
 		t.Fatal("expected error for unknown gateway")
 	}
@@ -710,7 +708,7 @@ func TestCompensate_StoreUpdateProvisionedErrorIgnored(t *testing.T) {
 	}
 }
 
-func TestDecommission_StoreDeleteFails_ReturnsError(t *testing.T) {
+func TestDelete_StoreDeleteFails_ReturnsError(t *testing.T) {
 	setupTestLogger(t)
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
@@ -719,7 +717,7 @@ func TestDecommission_StoreDeleteFails_ReturnsError(t *testing.T) {
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
 	d.store.ErrDeleteGateway = fakes.ErrSimulated
 
-	err := reg.Decommission(context.Background(), gw.ManagementGatewayID)
+	err := reg.Delete(context.Background(), gw.ManagementGatewayID)
 	if err == nil {
 		t.Fatal("expected error when store.DeleteGateway fails")
 	}

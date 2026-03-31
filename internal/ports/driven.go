@@ -27,7 +27,7 @@ type GatewayStore interface {
 
 // Runs the full factory-key provisioning bootstrap. Internally generates an EC keypair and CSR, then calls POST /api/provision/onboard.
 type Onboarder interface {
-	Onboard(ctx context.Context, factoryID, factoryKey string, sendFrequencyMs int) (domain.ProvisionResult, error)
+	Onboard(ctx context.Context, factoryID, factoryKey string, sendFrequencyMs int, firmwareVersion string) (domain.ProvisionResult, error)
 }
 
 // Publishes a raw byte payload to a NATS subject.
@@ -44,8 +44,9 @@ type CommandSubscription interface {
 }
 
 // Opens a per-gateway mTLS NATS connection using the gateway's certificate and private key.
+// The returned func() error closes the underlying nats.Conn and must be called when the gateway is torn down.
 type GatewayConnector interface {
-	Connect(ctx context.Context, certPEM []byte, keyPEM []byte, tenantID string, managementGatewayID uuid.UUID) (GatewayPublisher, CommandSubscription, error)
+	Connect(ctx context.Context, certPEM []byte, keyPEM []byte, tenantID string, managementGatewayID uuid.UUID) (GatewayPublisher, CommandSubscription, func() error, error)
 }
 
 // Encryptor encrypts a float64 sensor value with a gateway's EncryptionKey.

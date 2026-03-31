@@ -76,14 +76,14 @@ func (h *GatewayHandler) Stop(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *GatewayHandler) Decommission(w http.ResponseWriter, r *http.Request) {
+func (h *GatewayHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, invalidGatewayIDFormat, http.StatusBadRequest)
 		return
 	}
 
-	if err := h.lifecycle.Decommission(r.Context(), id); err != nil {
+	if err := h.lifecycle.Delete(r.Context(), id); err != nil {
 		writeError(w, err)
 		return
 	}

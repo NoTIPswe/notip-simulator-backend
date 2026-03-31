@@ -199,24 +199,33 @@ func TestWorker_NetworkDegradation_100PctLoss_StopsPublish(t *testing.T) {
 	}
 }
 
-func TestWorker_Disconnect_ClosesPublisher(t *testing.T) {
+func TestWorker_Disconnect_PausesTelemetryWithoutClosingPublisher(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
+
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+	before := pub.Count()
+
 	_ = reg.InjectGatewayAnomaly(context.Background(), gw.ManagementGatewayID, domain.GatewayAnomalyCommand{
 		Type:       domain.Disconnect,
 		Disconnect: &domain.DisconnectParams{DurationSeconds: 1},
 	})
 
-	pub := d.connector.Publisher
-	ok := waitFor(t, time.Second, func() bool {
-		return pub.IsClosed()
-	})
-	if !ok {
-		t.Error("expected publisher to be closed during Disconnect anomaly")
+	time.Sleep(250 * time.Millisecond)
+	after := pub.Count()
+	if after > before {
+		t.Errorf("expected no new telemetry during Disconnect anomaly, got %d new", after-before)
+	}
+	if pub.IsClosed() {
+		t.Error("expected publisher to remain open during Disconnect anomaly")
 	}
 }
 
@@ -355,25 +364,41 @@ func TestWorker_AnomalyExpiry_NetworkDegradation_ClearsAfterDuration(t *testing.
 	}
 }
 
-func TestWorker_AnomalyExpiry_Disconnect_ReconnectsAfterDuration(t *testing.T) {
+func TestWorker_AnomalyExpiry_Disconnect_ResumesPublishingAfterDuration(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
 
-	// A zero-duration disconnect should trigger an immediate reconnection attempt.
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+
+	// A short disconnect should stop telemetry briefly, then resume naturally.
 	_ = reg.InjectGatewayAnomaly(context.Background(), gw.ManagementGatewayID, domain.GatewayAnomalyCommand{
 		Type:       domain.Disconnect,
-		Disconnect: &domain.DisconnectParams{DurationSeconds: 0},
+		Disconnect: &domain.DisconnectParams{DurationSeconds: 1},
 	})
 
-	ok := waitFor(t, 2*time.Second, func() bool {
-		return d.connector.Publisher.ReconnectCount() > 0
+	before := pub.Count()
+	time.Sleep(250 * time.Millisecond)
+	during := pub.Count()
+	if during > before {
+		t.Errorf("expected no new telemetry during Disconnect anomaly, got %d new", during-before)
+	}
+
+	// Advance the fake clock past the 1-second anomaly duration so checkAnomalyExpiry clears it.
+	d.clock.Advance(2 * time.Second)
+
+	ok := waitFor(t, 2500*time.Millisecond, func() bool {
+		return pub.Count() > during
 	})
 	if !ok {
-		t.Error("reconnect was not called after the disconnect anomaly period expired.")
+		t.Error("expected telemetry to resume after Disconnect anomaly expired")
 	}
 }
 
