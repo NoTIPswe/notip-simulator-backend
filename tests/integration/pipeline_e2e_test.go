@@ -89,7 +89,6 @@ func newE2EEnv(t *testing.T) *e2eEnv {
 			CertPEM:         []byte("cert"),
 			PrivateKeyPEM:   []byte("key"),
 			AESKey:          aesKey,
-			GatewayID:       uuid.NewString(),
 			TenantID:        "tenant-e2e",
 			SendFrequencyMs: 50,
 		},

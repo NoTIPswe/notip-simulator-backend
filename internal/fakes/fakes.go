@@ -172,7 +172,14 @@ type FakeProvisioningClient struct {
 }
 
 func (p *FakeProvisioningClient) Onboard(_ context.Context, _, _ string, _ int, _ string) (domain.ProvisionResult, error) {
-	return p.Result, p.Err
+	if p.Err != nil {
+		return domain.ProvisionResult{}, p.Err
+	}
+	result := p.Result
+	if result.GatewayID == "" {
+		result.GatewayID = uuid.NewString()
+	}
+	return result, nil
 }
 
 // GatewayStore.
