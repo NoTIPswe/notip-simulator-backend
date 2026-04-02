@@ -138,7 +138,7 @@ func (r *GatewayRegistry) Start(ctx context.Context, managementID uuid.UUID) err
 	}
 
 	w.Start(context.Background())
-	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Running)
+	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Online)
 }
 
 func (r *GatewayRegistry) Stop(ctx context.Context, managementID uuid.UUID) error {
@@ -154,7 +154,7 @@ func (r *GatewayRegistry) Stop(ctx context.Context, managementID uuid.UUID) erro
 		w.commandPumpCancel()
 	}
 	w.Stop(workerStopTimeout)
-	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Stopped)
+	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Offline)
 }
 
 func (r *GatewayRegistry) Delete(ctx context.Context, managementID uuid.UUID) error {
@@ -200,6 +200,10 @@ func (r *GatewayRegistry) GetGateway(ctx context.Context, managementID uuid.UUID
 // SensorManagementService methods.
 
 func (r *GatewayRegistry) AddSensor(ctx context.Context, gatewayID int64, sensor domain.SimSensor) (*domain.SimSensor, error) {
+	if sensor.MinRange >= sensor.MaxRange {
+		return nil, fmt.Errorf("%w: minRange %.2f must be less than maxRange %.2f", domain.ErrInvalidSensorRange, sensor.MinRange, sensor.MaxRange)
+	}
+
 	sensor.SensorID = uuid.New()
 	sensor.GatewayID = gatewayID
 	sensor.CreatedAt = r.clock.Now()
@@ -215,7 +219,10 @@ func (r *GatewayRegistry) AddSensor(ctx context.Context, gatewayID int64, sensor
 	for _, w := range r.workers {
 		if w.gateway.ID == gatewayID {
 			gen := generator.NewGeneratorFactory().New(&sensor, r.clock)
-			w.AddSensor(&sensor, gen)
+			err := w.AttachSensor(&sensor, gen)
+			if err != nil {
+				return nil, fmt.Errorf("failed to attach sensor to worker: %w", err)
+			}
 			break
 		}
 	}
@@ -385,7 +392,7 @@ func (r *GatewayRegistry) runProvisioningSaga(ctx context.Context, gw *domain.Si
 	var closeNC func() error
 	pub, sub, closeNC, err = r.connector.Connect(ctx, gw.CertPEM, gw.PrivateKeyPEM, gw.TenantID, gw.ManagementGatewayID)
 	if err != nil {
-		r.compensate(ctx, gw, reachedStage, pub, sub, nil)
+		r.compensate(ctx, gw, reachedStage, sub, nil)
 		r.metrics.ProvisioningErrors.Inc()
 		return fmt.Errorf("connect: %w", err)
 	}
@@ -394,23 +401,23 @@ func (r *GatewayRegistry) runProvisioningSaga(ctx context.Context, gw *domain.Si
 	// Stage 4: Start worker.
 	sensors, err := r.store.ListSensors(ctx, gw.ID)
 	if err != nil {
-		r.compensate(ctx, gw, reachedStage, pub, sub, closeNC)
+		r.compensate(ctx, gw, reachedStage, sub, closeNC)
 		r.metrics.ProvisioningErrors.Inc()
 		return fmt.Errorf("list sensors: %w", err)
 	}
 
 	if _, err := r.startWorker(ctx, gw, sensors, pub, sub, closeNC); err != nil {
-		r.compensate(ctx, gw, reachedStage, pub, sub, closeNC)
+		r.compensate(ctx, gw, reachedStage, sub, closeNC)
 		r.metrics.ProvisioningErrors.Inc()
 		return err
 	}
 
-	gw.Status = domain.Running
+	gw.Status = domain.Online
 	r.metrics.ProvisioningSuccess.Inc()
 	return nil
 }
 
-func (r *GatewayRegistry) compensate(ctx context.Context, gw *domain.SimGateway, failedAt provisioningStage, pub ports.GatewayPublisher, sub ports.CommandSubscription, closeNC func() error) {
+func (r *GatewayRegistry) compensate(ctx context.Context, gw *domain.SimGateway, failedAt provisioningStage, sub ports.CommandSubscription, closeNC func() error) {
 	switch failedAt {
 	case stageConnect:
 		if sub != nil {
@@ -482,7 +489,7 @@ func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway
 
 	r.metrics.GatewaysRunning.Inc()
 
-	if err := r.store.UpdateStatus(ctx, gw.ID, domain.Running); err != nil {
+	if err := r.store.UpdateStatus(ctx, gw.ID, domain.Online); err != nil {
 		slog.Warn("failed to update gateway status to running", "gatewayID", gw.ManagementGatewayID, "err", err)
 	}
 

@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -91,8 +92,8 @@ func TestCreateAndStart_Success(t *testing.T) {
 	if gw == nil {
 		t.Fatal("expected non-nil gateway")
 	}
-	if gw.Status != domain.Running {
-		t.Errorf("want status Running, got %v", gw.Status)
+	if gw.Status != domain.Online {
+		t.Errorf("want status Online, got %v", gw.Status)
 	}
 	if gw.ManagementGatewayID == uuid.Nil {
 		t.Error("expected non-nil ManagementGatewayID")
@@ -140,8 +141,8 @@ func TestCreateAndStart_UpdateProvisionedStoreErrorIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatalf(unexpected_error, err)
 	}
-	if gw == nil || gw.Status != domain.Running {
-		t.Fatal("expected running gateway")
+	if gw == nil || gw.Status != domain.Online {
+		t.Fatal("expected online gateway")
 	}
 }
 
@@ -368,8 +369,21 @@ func TestListSensors_Success(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{GatewayID: gw.ID, Type: domain.Temperature, Algorithm: domain.UniformRandom})
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{GatewayID: gw.ID, Type: domain.Humidity, Algorithm: domain.Constant})
+	_, err1 := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, Algorithm: domain.UniformRandom,
+		MinRange: 0, MaxRange: 50,
+	})
+	if err1 != nil {
+		t.Fatalf("unexpected error adding sensor 1: %v", err1)
+	}
+
+	_, err2 := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Humidity, Algorithm: domain.Constant,
+		MinRange: 10, MaxRange: 90,
+	})
+	if err2 != nil {
+		t.Fatalf("unexpected error adding sensor 2: %v", err2)
+	}
 
 	sensors, err := reg.ListSensors(context.Background(), gw.ID)
 	if err != nil {
@@ -387,11 +401,19 @@ func TestDeleteSensor_Success(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	sensor, _ := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, Algorithm: domain.UniformRandom,
+	sensor, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID,
+		Type:      domain.Temperature,
+		Algorithm: domain.UniformRandom,
+		MinRange:  0,
+		MaxRange:  100,
 	})
 
-	err := reg.DeleteSensor(context.Background(), sensor.ID)
+	if err != nil {
+		t.Fatalf("unexpected error adding sensor: %v", err)
+	}
+
+	err = reg.DeleteSensor(context.Background(), sensor.ID)
 	if err != nil {
 		t.Fatalf(unexpected_error, err)
 	}
@@ -405,11 +427,19 @@ func TestDeleteSensor_StoreError(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	sensor, _ := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, Algorithm: domain.UniformRandom,
+	sensor, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID,
+		Type:      domain.Temperature,
+		Algorithm: domain.UniformRandom,
+		MinRange:  0,
+		MaxRange:  100,
 	})
 
-	err := reg.DeleteSensor(context.Background(), sensor.ID)
+	if err != nil {
+		t.Fatalf("unexpected error adding sensor: %v", err)
+	}
+
+	err = reg.DeleteSensor(context.Background(), sensor.ID)
 	if err == nil {
 		t.Fatal("expected error when store.DeleteSensor fails")
 	}
@@ -703,8 +733,8 @@ func TestCompensate_StoreUpdateProvisionedErrorIgnored(t *testing.T) {
 	if len(gws) != 1 {
 		t.Errorf("expected 1 gateway, got %d", len(gws))
 	}
-	if gw.Status != domain.Running {
-		t.Errorf("expected Running status, got %v", gw.Status)
+	if gw.Status != domain.Online {
+		t.Errorf("expected Online status, got %v", gw.Status)
 	}
 }
 
@@ -827,5 +857,79 @@ func TestInjectSensorOutlier_NilValue_UsesDefault(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("unexpected failure when injecting outlier with nil value: %v.", err)
+	}
+}
+
+func TestAddSensor_InvalidRange_ReturnsError(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+
+	_, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID,
+		Type:      domain.Temperature,
+		MinRange:  100,
+		MaxRange:  100,
+		Algorithm: domain.UniformRandom,
+	})
+
+	if err == nil {
+		t.Fatal("expected error for invalid sensor range (MinRange >= MaxRange)")
+	}
+	if !errors.Is(err, domain.ErrInvalidSensorRange) {
+		t.Errorf("expected ErrInvalidSensorRange, got %v", err)
+	}
+}
+
+func TestHandleDecommission_TenantMismatch_Ignored(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+
+	// Wrong tenantID — should be ignored, worker must still be running.
+	reg.HandleDecommission("wrong-tenant", gw.ManagementGatewayID.String())
+
+	w := getWorker(t, reg, gw.ManagementGatewayID)
+	if !w.IsRunning() {
+		t.Error("worker should still be running after tenant mismatch decommission event")
+	}
+}
+
+func TestDelete_CancelsCommandPump(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	w := getWorker(t, reg, gw.ManagementGatewayID)
+
+	_ = reg.Delete(context.Background(), gw.ManagementGatewayID)
+
+	// commandPumpCancel should have been called — worker must not be running.
+	ok := waitFor(t, time.Second, func() bool { return !w.IsRunning() })
+	if !ok {
+		t.Error("expected worker to stop after Delete")
+	}
+}
+
+func TestStop_NotFound_ReturnsErrGatewayNotFound(t *testing.T) {
+	reg := newTestRegistry(newTestDeps())
+	err := reg.Stop(context.Background(), uuid.New())
+	if !errors.Is(err, domain.ErrGatewayNotFound) {
+		t.Errorf("expected ErrGatewayNotFound, got %v", err)
+	}
+}
+
+func TestDelete_NotFound_ReturnsErrGatewayNotFound(t *testing.T) {
+	reg := newTestRegistry(newTestDeps())
+	err := reg.Delete(context.Background(), uuid.New())
+	if !errors.Is(err, domain.ErrGatewayNotFound) {
+		t.Errorf("expected ErrGatewayNotFound, got %v", err)
 	}
 }

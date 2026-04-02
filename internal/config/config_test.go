@@ -133,3 +133,39 @@ func TestLoad_CustomSendFrequency(t *testing.T) {
 		t.Errorf("expected 2500, got %d", cfg.DefaultSendFrequencyMs)
 	}
 }
+
+func TestLoad_InvalidSendFrequency_UsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("DEFAULT_SEND_FREQUENCY_MS", "0")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DefaultSendFrequencyMs != 5000 {
+		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+	}
+}
+
+func TestLoad_NegativeSendFrequency_UsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("DEFAULT_SEND_FREQUENCY_MS", "-1")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DefaultSendFrequencyMs != 5000 {
+		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+	}
+}
+
+func TestLoad_InvalidBufferSize_UsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("GATEWAY_BUFFER_SIZE", "0")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GatewayBufferSize != 1000 {
+		t.Errorf("expected fallback 1000, got %d", cfg.GatewayBufferSize)
+	}
+}

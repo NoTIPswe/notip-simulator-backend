@@ -142,11 +142,11 @@ func TestSQLiteStore_UpdateStatus(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, store.UpdateStatus(ctx, id, domain.Running))
+	require.NoError(t, store.UpdateStatus(ctx, id, domain.Online))
 
 	got, err := store.GetGateway(ctx, id)
 	require.NoError(t, err)
-	assert.Equal(t, domain.Running, got.Status)
+	assert.Equal(t, domain.Online, got.Status)
 }
 
 func TestSQLiteStore_UpdateFirmwareVersion(t *testing.T) {
@@ -340,4 +340,50 @@ func TestSQLiteStore_DataSurvivesReopen(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "tenant-persist", gw.TenantID)
 	}
+}
+
+func TestSQLiteStore_GetGateway_NoEncryptionKey(t *testing.T) {
+	store := newSQLiteStore(t)
+	ctx := context.Background()
+
+	//Gateway created without an encryption key (not provisioned).
+	id, err := store.CreateGateway(ctx, domain.SimGateway{
+		ManagementGatewayID: uuid.New(),
+		TenantID:            "tenant-1",
+		Status:              domain.Provisioning,
+		// empty encKeyBytes.
+	})
+	require.NoError(t, err)
+
+	got, err := store.GetGateway(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, id, got.ID)
+	// EncryptionKey must be zero value, no panic.
+	assert.Equal(t, domain.EncryptionKey{}, got.EncryptionKey)
+}
+
+func TestSQLiteStore_TenantIsolation_GatewaysNotShared(t *testing.T) {
+	store := newSQLiteStore(t)
+	ctx := context.Background()
+
+	//Gateways on different tenants.
+	_, _ = store.CreateGateway(ctx, domain.SimGateway{
+		ManagementGatewayID: uuid.New(), TenantID: "tenant-A",
+		Status: domain.Provisioning, EncryptionKey: validAESKey(t),
+	})
+	_, _ = store.CreateGateway(ctx, domain.SimGateway{
+		ManagementGatewayID: uuid.New(), TenantID: "tenant-B",
+		Status: domain.Provisioning, EncryptionKey: validAESKey(t),
+	})
+
+	list, err := store.ListGateways(ctx)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+
+	tenants := map[string]int{}
+	for _, gw := range list {
+		tenants[gw.TenantID]++
+	}
+	assert.Equal(t, 1, tenants["tenant-A"], "tenant-A should have exactly 1 gateway")
+	assert.Equal(t, 1, tenants["tenant-B"], "tenant-B should have exactly 1 gateway")
 }

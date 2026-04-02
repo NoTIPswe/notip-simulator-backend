@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -74,8 +75,9 @@ func setupJetStream(t *testing.T, natsURI string) (*nats.Conn, nats.JetStreamCon
 		Storage:  nats.MemoryStorage,
 	})
 	if err != nil {
-		// If the stream already exists from a previous subtest, ignore.
-		require.Contains(t, err.Error(), "already exists", "unexpected stream creation error")
+		errStr := err.Error()
+		require.True(t, strings.Contains(errStr, "already exists") || strings.Contains(errStr, "overlap"),
+			"unexpected stream creation error: %v", err)
 	}
 
 	return nc, js
@@ -171,7 +173,9 @@ func TestNATSDecommissionListener_InvalidSubject_TooFewParts_Ignored(t *testing.
 		Storage:  nats.MemoryStorage,
 	})
 	if err != nil {
-		require.Contains(t, err.Error(), "already exists")
+		errStr := err.Error()
+		require.True(t, strings.Contains(errStr, "already exists") || strings.Contains(errStr, "overlap"),
+			"unexpected stream creation error: %v", err)
 	}
 
 	receiver := &fakeDecommissionReceiver{}

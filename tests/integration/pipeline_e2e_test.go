@@ -270,7 +270,7 @@ func TestE2ERestoreAllRestartsGatewayAndPublishes(t *testing.T) {
 		TenantID:            "tenant-restore",
 		Provisioned:         true,
 		SendFrequencyMs:     50,
-		Status:              domain.Stopped,
+		Status:              domain.Paused,
 	})
 	_ = id
 	require.NoError(t, err)
@@ -342,4 +342,151 @@ func TestE2EInjectNetworkDegradationWorkerAcceptsCommand(t *testing.T) {
 	}
 	err = e.registry.InjectGatewayAnomaly(ctx, gw.ManagementGatewayID, cmd)
 	assert.NoError(t, err, "InjectGatewayAnomaly must not error on a running gateway")
+}
+
+func TestE2EDisconnectAnomaly_TelemetryResumesAfterExpiry(t *testing.T) {
+	e := newE2EEnv(t)
+	ctx := context.Background()
+
+	gw, _ := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
+		FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
+	})
+	_, _ = e.registry.AddSensor(ctx, gw.ID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 50, Algorithm: domain.Constant,
+	})
+
+	subConn := connectNATS(t, e.natsURI)
+	msgCh := make(chan *nats.Msg, 20)
+	sub, _ := subConn.Subscribe("telemetry.data.>", func(m *nats.Msg) { msgCh <- m })
+	t.Cleanup(func() { sub.Unsubscribe() })
+
+	//Wait for the first message.
+	select {
+	case <-msgCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no telemetry before anomaly")
+	}
+
+	//Disconnect for 1 second.
+	_ = e.registry.InjectGatewayAnomaly(ctx, gw.ManagementGatewayID, domain.GatewayAnomalyCommand{
+		Type:       domain.Disconnect,
+		Disconnect: &domain.DisconnectParams{DurationSeconds: 1},
+	})
+
+	//Drain during disconnect.
+	time.Sleep(300 * time.Millisecond)
+	for len(msgCh) > 0 {
+		<-msgCh
+	}
+
+	time.Sleep(1500 * time.Millisecond)
+	select {
+	case <-msgCh:
+		// OK.
+	case <-time.After(2 * time.Second):
+		t.Error("expected telemetry to resume after disconnect anomaly expired")
+	}
+}
+
+func TestE2ENetworkDegradation_100PctLoss_StopsTelemetry(t *testing.T) {
+	e := newE2EEnv(t)
+	ctx := context.Background()
+
+	gw, _ := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
+		FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
+	})
+	_, _ = e.registry.AddSensor(ctx, gw.ID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 50, Algorithm: domain.Constant,
+	})
+
+	subConn := connectNATS(t, e.natsURI)
+	msgCh := make(chan *nats.Msg, 20)
+	sub, _ := subConn.Subscribe("telemetry.data.>", func(m *nats.Msg) { msgCh <- m })
+	t.Cleanup(func() { sub.Unsubscribe() })
+
+	//Wait for the first message.
+	select {
+	case <-msgCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no telemetry before anomaly")
+	}
+
+	_ = e.registry.InjectGatewayAnomaly(ctx, gw.ManagementGatewayID, domain.GatewayAnomalyCommand{
+		Type: domain.NetworkDegradation,
+		NetworkDegradation: &domain.NetworkDegradationParams{
+			DurationSeconds: 60,
+			PacketLossPct:   1.0,
+		},
+	})
+
+	// Drain.
+	time.Sleep(100 * time.Millisecond)
+	for len(msgCh) > 0 {
+		<-msgCh
+	}
+
+	before := len(msgCh)
+	time.Sleep(300 * time.Millisecond)
+	after := len(msgCh)
+
+	if after > before {
+		t.Errorf("expected no telemetry during 100%% packet loss, got %d messages", after-before)
+	}
+}
+
+// After InjectSensorOutlier the worker must publish at least one envelope on NATS,
+// proving that an out-of-range value does not break the pipeline.
+func TestE2EOutlierInjection_TelemetryPublished(t *testing.T) {
+	e := newE2EEnv(t)
+	ctx := context.Background()
+
+	gw, err := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
+		FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
+	})
+	require.NoError(t, err)
+
+	// Sensor with range [20, 30] — outlier will be 500.0, way out of range.
+	sensor, err := e.registry.AddSensor(ctx, gw.ID, domain.SimSensor{
+		Type:      domain.Temperature,
+		MinRange:  20,
+		MaxRange:  30,
+		Algorithm: domain.Constant,
+	})
+	require.NoError(t, err)
+
+	subConn := connectNATS(t, e.natsURI)
+	msgCh := make(chan *nats.Msg, 10)
+	sub, err := subConn.Subscribe("telemetry.data.>", func(m *nats.Msg) { msgCh <- m })
+	require.NoError(t, err)
+	t.Cleanup(func() { sub.Unsubscribe() }) //nolint:errcheck
+
+	// Wait for a baseline message before injecting the outlier.
+	select {
+	case <-msgCh:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout: nessun messaggio baseline prima dell'outlier")
+	}
+
+	// Inject out of range value.
+	outlierVal := 500.0
+	require.NoError(t, e.registry.InjectSensorOutlier(ctx, sensor.ID, &outlierVal))
+
+	// Drain the channel to isolate post-injection messages.
+	for len(msgCh) > 0 {
+		<-msgCh
+	}
+
+	// Verify that at least one valid envelope arrives after injection.
+	select {
+	case msg := <-msgCh:
+		var envelope domain.TelemetryEnvelope
+		require.NoError(t, json.Unmarshal(msg.Data, &envelope))
+		assert.Equal(t, gw.ManagementGatewayID.String(), envelope.GatewayID)
+		assert.Equal(t, "temperature", envelope.SensorType)
+		assert.NotEmpty(t, envelope.EncryptedData)
+		assert.NotEmpty(t, envelope.IV)
+		assert.NotEmpty(t, envelope.AuthTag)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout: no envelope received after InjectSensorOutlier — pipeline is blocked.")
+	}
 }

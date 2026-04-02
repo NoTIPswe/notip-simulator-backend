@@ -573,7 +573,7 @@ func TestWorker_HandleIncomingCommand_ConfigUpdate_StatusPersistFails_SendsNACK(
 	worker, pub, store := newCommandTestWorker(t)
 	store.ErrUpdateStatus = fakes.ErrSimulated
 
-	status := domain.Running
+	status := domain.Online
 	payload, err := json.Marshal(domain.CommandConfigPayload{Status: &status})
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -619,5 +619,147 @@ func TestWorker_HandleIncomingCommand_ConfigUpdate_ChannelFull_SendsNACK(t *test
 	}
 	if ack.Message == nil || *ack.Message != "config channel full" {
 		t.Fatalf("expected config channel full message, got %v", ack.Message)
+	}
+}
+
+func TestWorker_StatusPaused_StopsPublish(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
+
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+
+	paused := domain.Paused
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		Status: &paused,
+	})
+
+	before := pub.Count()
+	time.Sleep(250 * time.Millisecond)
+	after := pub.Count()
+
+	if after > before {
+		t.Errorf("expected no new publishes when status is Paused, got %d new", after-before)
+	}
+}
+
+func TestWorker_StatusOffline_StopsPublish(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
+
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+
+	offline := domain.Offline
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		Status: &offline,
+	})
+
+	before := pub.Count()
+	time.Sleep(250 * time.Millisecond)
+	after := pub.Count()
+
+	if after > before {
+		t.Errorf("expected no new publishes when status is Offline, got %d new", after-before)
+	}
+}
+
+func TestWorker_Stop_CallsCloseNC(t *testing.T) {
+	closed := false
+	closeNC := func() error {
+		closed = true
+		return nil
+	}
+
+	store := fakes.NewFakeGatewayStore()
+	gw := domain.SimGateway{
+		ManagementGatewayID: uuid.New(),
+		TenantID:            "tenant1",
+		SendFrequencyMs:     50,
+	}
+	id, _ := store.CreateGateway(context.Background(), gw)
+	gw.ID = id
+
+	pub := &fakes.FakePublisher{}
+	met := newTestDeps().met
+	w := NewGatewayWorker(WorkerDeps{
+		Gateway:   gw,
+		Publisher: pub,
+		CloseNC:   closeNC,
+		Encryptor: &fakes.FakeEncryptor{},
+		Clock:     fakes.NewFakeClock(time.Now()),
+		Buffer:    NewMessageBuffer(2, "telemetry.test", gw.ManagementGatewayID.String(), pub, met),
+		Store:     store,
+	})
+
+	w.Start(context.Background())
+	w.Stop(time.Second)
+
+	if !closed {
+		t.Error("expected closeNC to be called on Stop")
+	}
+}
+
+func TestWorker_HandleIncomingCommand_ConfigUpdate_StatusSuccess_SendsACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	status := domain.Paused
+	payload, _ := json.Marshal(domain.CommandConfigPayload{Status: &status})
+
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cfg-status-ok",
+		Type:      domain.ConfigUpdate,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.ACK {
+		t.Fatalf("expected ACK, got %s", ack.Status)
+	}
+}
+
+func TestWorker_StatusResumeFromPaused(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
+
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+
+	paused := domain.Paused
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		Status: &paused,
+	})
+	time.Sleep(150 * time.Millisecond)
+	before := pub.Count()
+
+	online := domain.Online
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		Status: &online,
+	})
+
+	ok := waitFor(t, time.Second, func() bool { return pub.Count() > before })
+	if !ok {
+		t.Error("expected telemetry to resume after status set back to Online")
 	}
 }

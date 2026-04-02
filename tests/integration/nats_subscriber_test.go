@@ -42,8 +42,8 @@ func setupSubscriberEnv(t *testing.T, natsURI string) *subscriberEnv {
 	js, err := nc.JetStream()
 	require.NoError(t, err)
 
-	tenantID := "aaaa0000-0000-0000-0000-000000000001"
-	gatewayID := "bbbb0000-0000-0000-0000-000000000002"
+	tenantID := uuid.New().String()
+	gatewayID := uuid.New().String()
 
 	streamName := fmt.Sprintf("CMD_%s", gatewayID[:8])
 	cmdSubject := fmt.Sprintf("command.gw.%s.%s", tenantID, gatewayID)
@@ -346,7 +346,7 @@ func TestNATSSubscriber_WorkerCommandFlow_FirmwareACK(t *testing.T) {
 		TenantID:            se.tenantID,
 		FirmwareVersion:     "1.0.0",
 		SendFrequencyMs:     50,
-		Status:              domain.Running,
+		Status:              domain.Online,
 	})
 	require.NoError(t, err)
 
@@ -358,7 +358,7 @@ func TestNATSSubscriber_WorkerCommandFlow_FirmwareACK(t *testing.T) {
 		TenantID:            se.tenantID,
 		EncryptionKey:       aesKey,
 		SendFrequencyMs:     50,
-		Status:              domain.Running,
+		Status:              domain.Online,
 	}
 
 	met := metrics.NewTestMetrics()

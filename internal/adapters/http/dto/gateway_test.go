@@ -20,7 +20,7 @@ func sampleGateway() *domain.SimGateway {
 		FirmwareVersion:     "1.2.3",
 		Provisioned:         true,
 		SendFrequencyMs:     500,
-		Status:              domain.Running,
+		Status:              domain.Online,
 		TenantID:            "tenant-abc",
 		CreatedAt:           time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC),
 	}

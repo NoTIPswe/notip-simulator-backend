@@ -139,7 +139,7 @@ func TestFakeGatewayStore_GatewayCRUDAndUpdates(t *testing.T) {
 		t.Fatalf("expected 1 gateway, got %d err=%v", len(list), err)
 	}
 
-	if err := s.UpdateStatus(context.Background(), id, domain.Running); err != nil {
+	if err := s.UpdateStatus(context.Background(), id, domain.Online); err != nil {
 		t.Fatalf("update status failed: %v", err)
 	}
 	if err := s.UpdateFrequency(context.Background(), id, 250); err != nil {
@@ -211,7 +211,7 @@ func TestFakeGatewayStore_ErrorPaths(t *testing.T) {
 	s.ErrListGateways = nil
 
 	s.ErrUpdateStatus = ErrSimulated
-	if err := s.UpdateStatus(context.Background(), id, domain.Running); err == nil {
+	if err := s.UpdateStatus(context.Background(), id, domain.Online); err == nil {
 		t.Fatal("expected update status error")
 	}
 	s.ErrUpdateStatus = nil

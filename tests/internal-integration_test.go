@@ -152,8 +152,8 @@ func TestIntegration_CreateGateway_Success(t *testing.T) {
 	if gw.TenantID != "tenant-1" {
 		t.Errorf("TenantID: want 'tenant-1', got %q", gw.TenantID)
 	}
-	if gw.Status != domain.Running {
-		t.Errorf("Status: want Running, got %q", gw.Status)
+	if gw.Status != domain.Online {
+		t.Errorf("Status: want Online, got %q", gw.Status)
 	}
 }
 
@@ -619,7 +619,7 @@ func TestIntegration_RestoreAll_RestartsProvisionedGateway(t *testing.T) {
 		TenantID:            "tenant-1",
 		Provisioned:         true,
 		SendFrequencyMs:     50,
-		Status:              domain.Stopped,
+		Status:              domain.Paused,
 	})
 	if err != nil {
 		t.Fatalf("setup: create gateway: %v", err)

@@ -100,11 +100,17 @@ func NewGatewayWorker(deps WorkerDeps) *GatewayWorker {
 	}
 }
 
-func (w *GatewayWorker) AddSensor(sensor *domain.SimSensor, gen generator.Generator) {
+func (w *GatewayWorker) AttachSensor(sensor *domain.SimSensor, gen generator.Generator) error {
+	if sensor.MinRange >= sensor.MaxRange {
+		return fmt.Errorf("%w: minRange %.2f must be less than maxRange %.2f", domain.ErrInvalidSensorRange, sensor.MinRange, sensor.MaxRange)
+	}
+
 	w.sensorMu.Lock()
 	defer w.sensorMu.Unlock()
 	w.sensors = append(w.sensors, sensor)
 	w.generators = append(w.generators, gen)
+
+	return nil
 }
 
 func (w *GatewayWorker) Start(ctx context.Context) {
@@ -198,6 +204,9 @@ func (w *GatewayWorker) drainControlChannels(ticker *time.Ticker) {
 			w.gateway.SendFrequencyMs = *cfg.SendFrequencyMs
 			ticker.Reset(time.Duration(w.gateway.SendFrequencyMs) * time.Millisecond)
 		}
+		if cfg.Status != nil {
+			w.gateway.Status = *cfg.Status
+		}
 	default:
 	}
 
@@ -246,6 +255,10 @@ func (w *GatewayWorker) checkAnomalyExpiry() {
 
 func (w *GatewayWorker) publishSensorData() {
 	if w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.Disconnect {
+		return
+	}
+
+	if w.gateway.Status == domain.Paused || w.gateway.Status == domain.Offline {
 		return
 	}
 

@@ -83,10 +83,10 @@ type ProvisionResult struct {
 type GatewayStatus string
 
 const (
-	Provisioning   GatewayStatus = "provisioning"
-	Running        GatewayStatus = "running"
-	Stopped        GatewayStatus = "stopped"
-	Decommissioned GatewayStatus = "decommissioned"
+	Provisioning GatewayStatus = "provisioning"
+	Online       GatewayStatus = "online"
+	Offline      GatewayStatus = "offline"
+	Paused       GatewayStatus = "paused"
 )
 
 type SensorType string

@@ -55,7 +55,7 @@ func TestGatewayHandler_Create_201(t *testing.T) {
 	id := uuid.New()
 	lc := &fakes.FakeGatewayLifecycleService{
 		CreateAndStartFn: func(_ context.Context, req domain.CreateGatewayRequest) (*domain.SimGateway, error) {
-			return &domain.SimGateway{ID: 1, ManagementGatewayID: id, Status: domain.Running}, nil
+			return &domain.SimGateway{ID: 1, ManagementGatewayID: id, Status: domain.Online}, nil
 		},
 	}
 
