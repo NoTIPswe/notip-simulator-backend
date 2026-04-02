@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
@@ -386,4 +387,75 @@ func TestSQLiteStore_TenantIsolation_GatewaysNotShared(t *testing.T) {
 	}
 	assert.Equal(t, 1, tenants["tenant-A"], "tenant-A should have exactly 1 gateway")
 	assert.Equal(t, 1, tenants["tenant-B"], "tenant-B should have exactly 1 gateway")
+}
+
+func TestSQLiteStore_UpdateFrequency(t *testing.T) {
+	store := newSQLiteStore(t)
+	ctx := context.Background()
+
+	id, err := store.CreateGateway(ctx, domain.SimGateway{
+		ManagementGatewayID: uuid.New(),
+		TenantID:            "tenant-1",
+		Status:              domain.Provisioning,
+		EncryptionKey:       validAESKey(t),
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, store.UpdateFrequency(ctx, id, 2000))
+
+	got, err := store.GetGateway(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, 2000, got.SendFrequencyMs)
+}
+
+func TestSQLiteStore_UpdateFrequency_NotFound(t *testing.T) {
+	store := newSQLiteStore(t)
+	ctx := context.Background()
+
+	err := store.UpdateFrequency(ctx, 999, 1000)
+	assert.Error(t, err, "UpdateFrequency on non-existent gateway must error")
+}
+
+func TestSQLiteStore_RunMigrations_Idempotent(t *testing.T) {
+	store := newSQLiteStore(t) // already runs migrations once
+	ctx := context.Background()
+
+	// Running migrations a second time must be a no-op, not an error.
+	require.NoError(t, store.RunMigrations(ctx),
+		"RunMigrations must be idempotent — running twice must not error")
+}
+
+func TestSQLiteStore_ScanGateway_InvalidUUID_ReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := dir + "/test.db"
+	ctx := context.Background()
+
+	store, err := sqlite.NewStore(dbPath)
+	require.NoError(t, err)
+	require.NoError(t, store.RunMigrations(ctx))
+	t.Cleanup(func() { store.Close() })
+
+	//Open a raw sql connection
+	rawDB, err := sql.Open("sqlite", dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { rawDB.Close() })
+
+	// Insert a gateway with a malformed UUID directly via raw SQL,
+	// bypassing the store's validation.
+	res, err := rawDB.ExecContext(ctx, `
+		INSERT INTO gateways (
+			management_gateway_id, factory_id, factory_key,
+			serial_number, model, firmware_version,
+			provisioned, send_frequency_ms, status, tenant_id, created_at
+		) VALUES ('not-a-valid-uuid', '', '', '', '', '', 0, 1000, 'provisioning', 'tenant-1', CURRENT_TIMESTAMP)
+	`)
+	require.NoError(t, err)
+
+	//Retrieve the ID generated but the insertion.
+	id, err := res.LastInsertId()
+	require.NoError(t, err)
+
+	_, err = store.GetGateway(ctx, id)
+	assert.Error(t, err, "GetGateway must error when management_gateway_id is not a valid UUID")
+	assert.Contains(t, err.Error(), "parse management_gateway_id")
 }
