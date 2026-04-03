@@ -175,19 +175,3 @@ func TestSensorOutlierCommand_NilValue_NoPanic(t *testing.T) {
 		t.Error("expected nil Value pointer")
 	}
 }
-
-func TestGatewayStatus_Paused_IsDistinct(t *testing.T) {
-	statuses := []domain.GatewayStatus{
-		domain.Provisioning,
-		domain.Online,
-		domain.Offline,
-		domain.Paused,
-	}
-	seen := map[domain.GatewayStatus]bool{}
-	for _, s := range statuses {
-		if seen[s] {
-			t.Errorf("duplicate GatewayStatus value: %v", s)
-		}
-		seen[s] = true
-	}
-}

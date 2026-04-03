@@ -137,7 +137,7 @@ func (r *GatewayRegistry) Start(ctx context.Context, managementID uuid.UUID) err
 		return nil
 	}
 
-	w.Start(context.Background())
+	w.Start(ctx)
 	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Online)
 }
 
@@ -459,8 +459,8 @@ func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway
 	}
 
 	w := NewGatewayWorker(deps)
-	w.Start(context.Background())
-	commandPumpCtx, cancelCommandPump := context.WithCancel(context.Background())
+	w.Start(ctx)
+	commandPumpCtx, cancelCommandPump := context.WithCancel(ctx)
 	w.commandPumpCancel = cancelCommandPump
 
 	go func() {

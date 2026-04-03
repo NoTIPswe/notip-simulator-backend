@@ -254,11 +254,7 @@ func (w *GatewayWorker) checkAnomalyExpiry() {
 }
 
 func (w *GatewayWorker) publishSensorData() {
-	if w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.Disconnect {
-		return
-	}
-
-	if w.gateway.Status == domain.Paused || w.gateway.Status == domain.Offline {
+	if w.isCommunicationBlocked() {
 		return
 	}
 
@@ -266,34 +262,46 @@ func (w *GatewayWorker) publishSensorData() {
 	defer w.sensorMu.RUnlock()
 
 	for i, sensor := range w.sensors {
-		value := w.generators[i].Next()
-		innerData := innerSensorData{Value: value, Unit: getUnitForSensor(sensor.Type)}
-		innerBytes, err := json.Marshal(innerData)
-		if err != nil {
-			slog.Error("failed to marshal sensor data", "sensorID", sensor.SensorID, "err", err)
-			continue
-		}
-
-		payload, err := w.encryptor.Encrypt(w.gateway.EncryptionKey, innerBytes)
-		if err != nil {
-			continue
-		}
-
-		envelope := w.buildEnvelope(*sensor, payload)
-		envBytes, err := json.Marshal(envelope)
-		if err != nil {
-			slog.Error("failed to marshal telemetry envelope", "sensorID", sensor.SensorID, "err", err)
-			continue
-		}
-
-		if w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.NetworkDegradation {
-			if rand.Float64() < w.activeAnomaly.packetLossPct {
-				continue
-			}
-		}
-
-		w.buffer.Send(envBytes)
+		w.sendSensorTelemetry(sensor, w.generators[i])
 	}
+}
+
+func (w *GatewayWorker) isCommunicationBlocked() bool {
+	isDisconnected := w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.Disconnect
+	isNotOnline := w.gateway.Status == domain.Paused || w.gateway.Status == domain.Offline
+	return isDisconnected || isNotOnline
+}
+
+func (w *GatewayWorker) sendSensorTelemetry(sensor *domain.SimSensor, gen generator.Generator) {
+	value := gen.Next()
+	innerData := innerSensorData{Value: value, Unit: getUnitForSensor(sensor.Type)}
+
+	innerBytes, err := json.Marshal(innerData)
+	if err != nil {
+		slog.Error("failed to marshal sensor data", "sensorID", sensor.SensorID, "err", err)
+		return
+	}
+
+	payload, err := w.encryptor.Encrypt(w.gateway.EncryptionKey, innerBytes)
+	if err != nil {
+		return
+	}
+
+	envelope := w.buildEnvelope(*sensor, payload)
+	envBytes, err := json.Marshal(envelope)
+	if err != nil {
+		slog.Error("failed to marshal telemetry envelope", "sensorID", sensor.SensorID, "err", err)
+		return
+	}
+
+	// Network Degradation.
+	if w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.NetworkDegradation {
+		if rand.Float64() < w.activeAnomaly.packetLossPct {
+			return
+		}
+	}
+
+	w.buffer.Send(envBytes)
 }
 
 func (w *GatewayWorker) handleAnomalyCommand(cmd domain.GatewayAnomalyCommand) {
