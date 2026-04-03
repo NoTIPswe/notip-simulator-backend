@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,10 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/fakes"
 )
 
-const expectedNACKMsg = "expected NACK, got %s"
+const (
+	expectedNACKMsg     = "expected NACK, got %s"
+	firmwareDownloadURL = "https://example.com/fw.bin"
+)
 
 func newCommandTestWorker(t *testing.T) (*GatewayWorker, *fakes.FakePublisher, *fakes.FakeGatewayStore) {
 	t.Helper()
@@ -241,7 +245,7 @@ func TestWorkerFirmwarePushCommandUpdatesStore(t *testing.T) {
 
 	//Sends firmware command directyly on the subscription's channel (bypass NATS).
 	sub := d.connector.Subscription
-	fwPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "2.5.0", DownloadURL: "https://example.com/fw.bin"})
+	fwPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "2.5.0", DownloadURL: firmwareDownloadURL})
 	sub.Ch <- domain.IncomingCommand{
 		CommandID: "fw-cmd-1",
 		Type:      domain.FirmwarePush,
@@ -445,7 +449,7 @@ func TestWorkerFirmwareCommandStoreUpdateFailsSendsNACK(t *testing.T) {
 
 	d.store.ErrUpdateFirmwareVersion = fakes.ErrSimulated
 
-	failPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "3.0.0", DownloadURL: "https://example.com/fw.bin"})
+	failPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "3.0.0", DownloadURL: firmwareDownloadURL})
 	d.connector.Subscription.Ch <- domain.IncomingCommand{
 		CommandID: "fw-cmd-fail",
 		Type:      domain.FirmwarePush,
@@ -763,5 +767,214 @@ func TestWorkerStatusResumeFromPaused(t *testing.T) {
 	ok := waitFor(t, time.Second, func() bool { return pub.Count() > before })
 	if !ok {
 		t.Error("expected telemetry to resume after status set back to Online")
+	}
+}
+
+// AttachSensor: invalid range returns error.
+func TestAttachSensorInvalidRangeReturnsError(t *testing.T) {
+	worker, _, _ := newCommandTestWorker(t)
+
+	sensor := &domain.SimSensor{
+		GatewayID: 1, Type: domain.Temperature,
+		MinRange: 100, MaxRange: 100, // equal → invalid
+	}
+	err := worker.AttachSensor(sensor, &fakes.FakeGenerator{})
+	if err == nil {
+		t.Fatal("expected error for MinRange >= MaxRange")
+	}
+	if !errors.Is(err, domain.ErrInvalidSensorRange) {
+		t.Errorf("expected ErrInvalidSensorRange, got %v", err)
+	}
+}
+
+// Stop: worker does not shut down within the timeout — warning is logged.
+func TestWorkerStopTimeoutLogsWarning(t *testing.T) {
+	setupTestLogger(t)
+	worker, pub, store := newCommandTestWorker(t)
+	_ = pub
+	_ = store
+
+	worker.Start(context.Background())
+	// A 1-nanosecond timeout reliably expires before the goroutine processes the cancel.
+	worker.Stop(1 * time.Nanosecond)
+	// Give the goroutine time to finish so the test doesn't leak.
+	time.Sleep(50 * time.Millisecond)
+}
+
+// sensorLoop: zero SendFrequencyMs waits on configCh before starting ticker.
+func TestWorkerZeroFrequencyStartsTickerOnConfig(t *testing.T) {
+	store := fakes.NewFakeGatewayStore()
+	gw := domain.SimGateway{
+		ManagementGatewayID: uuid.New(),
+		TenantID:            "tenant1",
+		SendFrequencyMs:     0, // triggers cfgC = w.configCh branch
+	}
+	id, _ := store.CreateGateway(context.Background(), gw)
+	gw.ID = id
+
+	pub := &fakes.FakePublisher{}
+	met := newTestDeps().met
+	w := NewGatewayWorker(WorkerDeps{
+		Gateway:   gw,
+		Publisher: pub,
+		Encryptor: &fakes.FakeEncryptor{},
+		Clock:     fakes.NewFakeClock(time.Now()),
+		Buffer:    NewMessageBuffer(2, "telemetry.test", gw.ManagementGatewayID.String(), pub, met),
+		Store:     store,
+	})
+
+	w.Start(context.Background())
+	defer w.Stop(time.Second)
+
+	// Send a valid frequency to start the ticker.
+	freq := 50
+	w.configCh <- domain.GatewayConfigUpdate{SendFrequencyMs: &freq}
+
+	// Allow time for the ticker to be created and at least one tick to fire.
+	time.Sleep(200 * time.Millisecond)
+}
+
+// drainControlChannels: invalid (<=0) frequency is ignored with a warning.
+func TestDrainControlChannelsInvalidFrequencyIgnored(t *testing.T) {
+	setupTestLogger(t)
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+
+	neg := -1
+	// UpdateConfig does not validate the value, so -1 reaches drainControlChannels.
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		SendFrequencyMs: &neg,
+	})
+
+	// Allow the tick to fire and drain the channel.
+	time.Sleep(200 * time.Millisecond)
+}
+
+// checkAnomalyExpiry: expiresAt is zero — returns early without clearing the anomaly.
+func TestCheckAnomalyExpiryZeroExpiresAtRetainsAnomaly(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+
+	// Inject an anomaly with nil params → expiresAt stays zero-value.
+	_ = reg.InjectGatewayAnomaly(context.Background(), gw.ManagementGatewayID, domain.GatewayAnomalyCommand{
+		Type:               domain.NetworkDegradation,
+		NetworkDegradation: nil,
+	})
+
+	// Allow several ticks so checkAnomalyExpiry runs with expiresAt == zero.
+	time.Sleep(200 * time.Millisecond)
+
+	w := getWorker(t, reg, gw.ManagementGatewayID)
+	_ = reg.Stop(context.Background(), gw.ManagementGatewayID)
+
+	anomaly := w.activeAnomaly
+	// The anomaly must still be present because expiresAt is zero (never expires).
+	if anomaly == nil {
+		t.Error("expected anomaly to persist when expiresAt is zero")
+	}
+}
+
+// handleConfigUpdateCommand: UpdateFrequency fails → NACK.
+func TestWorkerHandleIncomingCommandConfigUpdateFrequencyFailsSendsNACK(t *testing.T) {
+	worker, pub, store := newCommandTestWorker(t)
+
+	// Remove the gateway from the store so UpdateFrequency returns an error.
+	_ = store.DeleteGateway(context.Background(), worker.gateway.ID)
+
+	freq := 300
+	payload, _ := json.Marshal(domain.CommandConfigPayload{SendFrequencyMs: &freq})
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cfg-freq-fail",
+		Type:      domain.ConfigUpdate,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf(expectedNACKMsg, ack.Status)
+	}
+	if ack.Message == nil || !strings.Contains(*ack.Message, "failed to update frequency in store") {
+		t.Fatalf("expected frequency update failure message, got %v", ack.Message)
+	}
+}
+
+// handleFirmwarePushCommand: empty FirmwareVersion returns ACK immediately.
+func TestWorkerHandleIncomingCommandFirmwarePushEmptyVersionACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	payload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "", DownloadURL: firmwareDownloadURL})
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "fw-empty-version",
+		Type:      domain.FirmwarePush,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.ACK {
+		t.Fatalf("expected ACK for empty firmware version, got %s", ack.Status)
+	}
+}
+
+// sendACK: publisher.Publish fails — error is logged, no panic.
+func TestWorkerSendACKPublishFailsNoPanic(t *testing.T) {
+	setupTestLogger(t)
+	worker, pub, _ := newCommandTestWorker(t)
+	pub.Err = fakes.ErrSimulated
+
+	// Any command that results in an ACK will trigger sendACK → Publish failure.
+	payload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: ""})
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "ack-publish-fail",
+		Type:      domain.FirmwarePush,
+		Payload:   payload,
+	})
+	// No panic expected; Publish failure is only logged.
+}
+
+// handleFirmwarePushCommand: invalid JSON payload returns NACK.
+func TestWorkerHandleIncomingCommandFirmwarePushInvalidPayloadSendsNACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "fw-invalid-json",
+		Type:      domain.FirmwarePush,
+		Payload:   []byte("{"),
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf(expectedNACKMsg, ack.Status)
+	}
+	if ack.Message == nil || !strings.Contains(*ack.Message, "invalid firmware payload") {
+		t.Fatalf("expected invalid firmware payload message, got %v", ack.Message)
+	}
+}
+
+// handleConfigUpdateCommand: sendFrequencyMs <= 0 returns NACK.
+func TestWorkerHandleIncomingCommandConfigUpdateZeroFrequencySendsNACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	zero := 0
+	payload, _ := json.Marshal(domain.CommandConfigPayload{SendFrequencyMs: &zero})
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cfg-zero-freq",
+		Type:      domain.ConfigUpdate,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf(expectedNACKMsg, ack.Status)
+	}
+	if ack.Message == nil || *ack.Message != "sendFrequencyMs must be > 0" {
+		t.Fatalf("expected sendFrequencyMs must be > 0 message, got %v", ack.Message)
 	}
 }

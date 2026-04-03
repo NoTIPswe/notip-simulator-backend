@@ -418,6 +418,34 @@ func TestSQLiteStoreUpdateFrequencyNotFound(t *testing.T) {
 	assert.Error(t, err, "UpdateFrequency on non-existent gateway must error")
 }
 
+func TestSQLiteStoreUpdateProvisionedNotFound(t *testing.T) {
+	store := newSQLiteStore(t)
+	ctx := context.Background()
+
+	err := store.UpdateProvisioned(ctx, 999, domain.ProvisionResult{
+		CertPEM:       []byte("cert"),
+		PrivateKeyPEM: []byte("key"),
+		AESKey:        validAESKey(t),
+	})
+	assert.Error(t, err, "UpdateProvisioned on non-existent gateway must error")
+}
+
+func TestSQLiteStoreUpdateStatusNotFound(t *testing.T) {
+	store := newSQLiteStore(t)
+	ctx := context.Background()
+
+	err := store.UpdateStatus(ctx, 999, domain.Online)
+	assert.Error(t, err, "UpdateStatus on non-existent gateway must error")
+}
+
+func TestSQLiteStoreUpdateFirmwareVersionNotFound(t *testing.T) {
+	store := newSQLiteStore(t)
+	ctx := context.Background()
+
+	err := store.UpdateFirmwareVersion(ctx, 999, "2.0.0")
+	assert.Error(t, err, "UpdateFirmwareVersion on non-existent gateway must error")
+}
+
 func TestSQLiteStoreRunMigrationsIdempotent(t *testing.T) {
 	store := newSQLiteStore(t) // already runs migrations once
 	ctx := context.Background()
