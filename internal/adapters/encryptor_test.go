@@ -25,7 +25,7 @@ func validAESKey(t *testing.T) domain.EncryptionKey {
 	return key
 }
 
-func TestAESGCMEncryptor_Encrypt_ProducesThreeParts(t *testing.T) {
+func TestAESGCMEncryptorEncryptProducesThreeParts(t *testing.T) {
 	enc := adapters.AESGCMEncryptor{}
 	key := validAESKey(t)
 
@@ -38,7 +38,7 @@ func TestAESGCMEncryptor_Encrypt_ProducesThreeParts(t *testing.T) {
 	assert.NotEmpty(t, result.AuthTag, "AuthTag must not be empty")
 }
 
-func TestAESGCMEncryptor_Encrypt_OutputIsBase64(t *testing.T) {
+func TestAESGCMEncryptorEncryptOutputIsBase64(t *testing.T) {
 	enc := adapters.AESGCMEncryptor{}
 	key := validAESKey(t)
 
@@ -56,7 +56,7 @@ func TestAESGCMEncryptor_Encrypt_OutputIsBase64(t *testing.T) {
 	assert.NoError(t, err, "AuthTag must be valid base64")
 }
 
-func TestAESGCMEncryptor_Encrypt_IVUniquePerCall(t *testing.T) {
+func TestAESGCMEncryptorEncryptIVUniquePerCall(t *testing.T) {
 	enc := adapters.AESGCMEncryptor{}
 	key := validAESKey(t)
 	payload, _ := json.Marshal(innerSensorData{Value: 1.0, Unit: "hPa"})
@@ -72,7 +72,7 @@ func TestAESGCMEncryptor_Encrypt_IVUniquePerCall(t *testing.T) {
 	assert.Len(t, results, 50, "each Encrypt call must produce a unique IV")
 }
 
-func TestAESGCMEncryptor_Encrypt_DifferentKeysProduceDifferentCiphertext(t *testing.T) {
+func TestAESGCMEncryptorEncryptDifferentKeysProduceDifferentCiphertext(t *testing.T) {
 	enc := adapters.AESGCMEncryptor{}
 	payload, _ := json.Marshal(innerSensorData{Value: 99.9, Unit: "bpm"})
 
@@ -94,13 +94,13 @@ func TestAESGCMEncryptor_Encrypt_DifferentKeysProduceDifferentCiphertext(t *test
 		"different keys must produce different ciphertext")
 }
 
-func TestAESGCMEncryptor_InvalidKeyLength(t *testing.T) {
+func TestAESGCMEncryptorInvalidKeyLength(t *testing.T) {
 	// NewEncryptionKey already validates length — this tests the domain guard.
 	_, err := domain.NewEncryptionKey([]byte("too-short"))
 	assert.Error(t, err, "NewEncryptionKey must reject keys shorter than 32 bytes")
 }
 
-func TestAESGCMEncryptor_Encrypt_EmptyPayload(t *testing.T) {
+func TestAESGCMEncryptorEncryptEmptyPayload(t *testing.T) {
 	enc := adapters.AESGCMEncryptor{}
 	key := validAESKey(t)
 
@@ -110,7 +110,7 @@ func TestAESGCMEncryptor_Encrypt_EmptyPayload(t *testing.T) {
 	assert.NotEmpty(t, result.IV)
 }
 
-func TestAESGCMEncryptor_Encrypt_LargePayload(t *testing.T) {
+func TestAESGCMEncryptorEncryptLargePayload(t *testing.T) {
 	enc := adapters.AESGCMEncryptor{}
 	key := validAESKey(t)
 	large := make([]byte, 4096)

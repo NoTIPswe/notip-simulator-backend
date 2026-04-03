@@ -13,6 +13,8 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/fakes"
 )
 
+const expectedNACKMsg = "expected NACK, got %s"
+
 func newCommandTestWorker(t *testing.T) (*GatewayWorker, *fakes.FakePublisher, *fakes.FakeGatewayStore) {
 	t.Helper()
 
@@ -68,7 +70,7 @@ func getWorker(t *testing.T, reg *GatewayRegistry, id uuid.UUID) *GatewayWorker 
 	return w
 }
 
-func TestWorker_IsRunning_AfterStart(t *testing.T) {
+func TestWorkerIsRunningAfterStart(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -81,7 +83,7 @@ func TestWorker_IsRunning_AfterStart(t *testing.T) {
 	}
 }
 
-func TestWorker_IsNotRunning_AfterStop(t *testing.T) {
+func TestWorkerIsNotRunningAfterStop(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -97,7 +99,7 @@ func TestWorker_IsNotRunning_AfterStop(t *testing.T) {
 	}
 }
 
-func TestWorker_Stop_IsSafeWhenAlreadyStopped(t *testing.T) {
+func TestWorkerStopIsSafeWhenAlreadyStopped(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -110,7 +112,7 @@ func TestWorker_Stop_IsSafeWhenAlreadyStopped(t *testing.T) {
 	w.Stop(time.Second)
 }
 
-func TestWorker_PublishesTelemetry_WhenSensorAdded(t *testing.T) {
+func TestWorkerPublishesTelemetryWhenSensorAdded(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -132,7 +134,7 @@ func TestWorker_PublishesTelemetry_WhenSensorAdded(t *testing.T) {
 	}
 }
 
-func TestWorker_NoPublish_WithoutSensors(t *testing.T) {
+func TestWorkerNoPublishWithoutSensors(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -148,7 +150,7 @@ func TestWorker_NoPublish_WithoutSensors(t *testing.T) {
 	}
 }
 
-func TestWorker_ConfigUpdate_Processed(t *testing.T) {
+func TestWorkerConfigUpdateProcessed(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -166,7 +168,7 @@ func TestWorker_ConfigUpdate_Processed(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 }
 
-func TestWorker_NetworkDegradation_100PctLoss_StopsPublish(t *testing.T) {
+func TestWorkerNetworkDegradation100PctLossStopsPublish(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -199,7 +201,7 @@ func TestWorker_NetworkDegradation_100PctLoss_StopsPublish(t *testing.T) {
 	}
 }
 
-func TestWorker_Disconnect_PausesTelemetryWithoutClosingPublisher(t *testing.T) {
+func TestWorkerDisconnectPausesTelemetryWithoutClosingPublisher(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -229,7 +231,7 @@ func TestWorker_Disconnect_PausesTelemetryWithoutClosingPublisher(t *testing.T) 
 	}
 }
 
-func TestWorker_FirmwarePushCommand_UpdatesStore(t *testing.T) {
+func TestWorkerFirmwarePushCommandUpdatesStore(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -256,7 +258,7 @@ func TestWorker_FirmwarePushCommand_UpdatesStore(t *testing.T) {
 	}
 }
 
-func TestWorker_ConfigCommand_ChangesFrequency(t *testing.T) {
+func TestWorkerConfigCommandChangesFrequency(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -286,7 +288,7 @@ func TestWorker_ConfigCommand_ChangesFrequency(t *testing.T) {
 	}
 }
 
-func TestWorker_AddSensor_ToRunningWorker(t *testing.T) {
+func TestWorkerAddSensorToRunningWorker(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -311,7 +313,7 @@ func TestWorker_AddSensor_ToRunningWorker(t *testing.T) {
 	}
 }
 
-func TestGetUnitForSensor_AllTypes(t *testing.T) {
+func TestGetUnitForSensorAllTypes(t *testing.T) {
 	cases := []struct {
 		sensorType domain.SensorType
 	}{
@@ -329,7 +331,7 @@ func TestGetUnitForSensor_AllTypes(t *testing.T) {
 	}
 }
 
-func TestGetUnitForSensor_UnknownType_ReturnsEmpty(t *testing.T) {
+func TestGetUnitForSensorUnknownTypeReturnsEmpty(t *testing.T) {
 	// An unknown sensor type must return an empty string instead of causing a panic.
 	unit := getUnitForSensor(domain.SensorType("unknown"))
 	if unit != "" {
@@ -337,7 +339,7 @@ func TestGetUnitForSensor_UnknownType_ReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestWorker_AnomalyExpiry_NetworkDegradation_ClearsAfterDuration(t *testing.T) {
+func TestWorkerAnomalyExpiryNetworkDegradationClearsAfterDuration(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -364,7 +366,7 @@ func TestWorker_AnomalyExpiry_NetworkDegradation_ClearsAfterDuration(t *testing.
 	}
 }
 
-func TestWorker_AnomalyExpiry_Disconnect_ResumesPublishingAfterDuration(t *testing.T) {
+func TestWorkerAnomalyExpiryDisconnectResumesPublishingAfterDuration(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -402,7 +404,7 @@ func TestWorker_AnomalyExpiry_Disconnect_ResumesPublishingAfterDuration(t *testi
 	}
 }
 
-func TestWorker_HandleIncomingCommand_ExpiredCommand_StabilityCheck(t *testing.T) {
+func TestWorkerHandleIncomingCommandExpiredCommandStabilityCheck(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -430,7 +432,7 @@ func TestWorker_HandleIncomingCommand_ExpiredCommand_StabilityCheck(t *testing.T
 	}
 }
 
-func TestWorker_FirmwareCommand_StoreUpdateFails_SendsNACK(t *testing.T) {
+func TestWorkerFirmwareCommandStoreUpdateFailsSendsNACK(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -453,7 +455,7 @@ func TestWorker_FirmwareCommand_StoreUpdateFails_SendsNACK(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 }
 
-func TestWorker_DrainControlChannels_AllFour(t *testing.T) {
+func TestWorkerDrainControlChannelsAllFour(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -490,7 +492,7 @@ func TestWorker_DrainControlChannels_AllFour(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 }
 
-func TestWorker_Stop_PublisherAlreadyClosed_NoPanic(t *testing.T) {
+func TestWorkerStopPublisherAlreadyClosedNoPanic(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -503,7 +505,7 @@ func TestWorker_Stop_PublisherAlreadyClosed_NoPanic(t *testing.T) {
 	w.Stop(time.Second)
 }
 
-func TestWorker_EncryptorFails_DoesNotCrash(t *testing.T) {
+func TestWorkerEncryptorFailsDoesNotCrash(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.encryptor.Err = fakes.ErrSimulated
@@ -522,7 +524,7 @@ func TestWorker_EncryptorFails_DoesNotCrash(t *testing.T) {
 	}
 }
 
-func TestWorker_Start_WhenAlreadyRunning_NoPanic(t *testing.T) {
+func TestWorkerStartWhenAlreadyRunningNoPanic(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -534,7 +536,7 @@ func TestWorker_Start_WhenAlreadyRunning_NoPanic(t *testing.T) {
 	w.Start(context.Background())
 }
 
-func TestWorker_HandleIncomingCommand_ConfigUpdate_InvalidPayload_SendsNACK(t *testing.T) {
+func TestWorkerHandleIncomingCommandConfigUpdateInvalidPayloadSendsNACK(t *testing.T) {
 	worker, pub, _ := newCommandTestWorker(t)
 
 	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
@@ -545,14 +547,14 @@ func TestWorker_HandleIncomingCommand_ConfigUpdate_InvalidPayload_SendsNACK(t *t
 
 	ack := decodeLastACK(t, pub)
 	if ack.Status != domain.NACK {
-		t.Fatalf("expected NACK, got %s", ack.Status)
+		t.Fatalf(expectedNACKMsg, ack.Status)
 	}
 	if ack.Message == nil || !strings.Contains(*ack.Message, "invalid config payload") {
 		t.Fatalf("expected invalid config payload error, got %v", ack.Message)
 	}
 }
 
-func TestWorker_HandleIncomingCommand_UnknownType_SendsNACK(t *testing.T) {
+func TestWorkerHandleIncomingCommandUnknownTypeSendsNACK(t *testing.T) {
 	worker, pub, _ := newCommandTestWorker(t)
 
 	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
@@ -562,14 +564,14 @@ func TestWorker_HandleIncomingCommand_UnknownType_SendsNACK(t *testing.T) {
 
 	ack := decodeLastACK(t, pub)
 	if ack.Status != domain.NACK {
-		t.Fatalf("expected NACK, got %s", ack.Status)
+		t.Fatalf(expectedNACKMsg, ack.Status)
 	}
 	if ack.Message == nil || *ack.Message != "unknown command type" {
 		t.Fatalf("expected unknown command type message, got %v", ack.Message)
 	}
 }
 
-func TestWorker_HandleIncomingCommand_ConfigUpdate_StatusPersistFails_SendsNACK(t *testing.T) {
+func TestWorkerHandleIncomingCommandConfigUpdateStatusPersistFailsSendsNACK(t *testing.T) {
 	worker, pub, store := newCommandTestWorker(t)
 	store.ErrUpdateStatus = fakes.ErrSimulated
 
@@ -587,14 +589,14 @@ func TestWorker_HandleIncomingCommand_ConfigUpdate_StatusPersistFails_SendsNACK(
 
 	ack := decodeLastACK(t, pub)
 	if ack.Status != domain.NACK {
-		t.Fatalf("expected NACK, got %s", ack.Status)
+		t.Fatalf(expectedNACKMsg, ack.Status)
 	}
 	if ack.Message == nil || !strings.Contains(*ack.Message, "failed to persist status") {
 		t.Fatalf("expected persist status failure message, got %v", ack.Message)
 	}
 }
 
-func TestWorker_HandleIncomingCommand_ConfigUpdate_ChannelFull_SendsNACK(t *testing.T) {
+func TestWorkerHandleIncomingCommandConfigUpdateChannelFullSendsNACK(t *testing.T) {
 	worker, pub, _ := newCommandTestWorker(t)
 
 	for i := 0; i < cap(worker.configCh); i++ {
@@ -615,14 +617,14 @@ func TestWorker_HandleIncomingCommand_ConfigUpdate_ChannelFull_SendsNACK(t *test
 
 	ack := decodeLastACK(t, pub)
 	if ack.Status != domain.NACK {
-		t.Fatalf("expected NACK, got %s", ack.Status)
+		t.Fatalf(expectedNACKMsg, ack.Status)
 	}
 	if ack.Message == nil || *ack.Message != "config channel full" {
 		t.Fatalf("expected config channel full message, got %v", ack.Message)
 	}
 }
 
-func TestWorker_StatusPaused_StopsPublish(t *testing.T) {
+func TestWorkerStatusPausedStopsPublish(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -650,7 +652,7 @@ func TestWorker_StatusPaused_StopsPublish(t *testing.T) {
 	}
 }
 
-func TestWorker_StatusOffline_StopsPublish(t *testing.T) {
+func TestWorkerStatusOfflineStopsPublish(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -678,7 +680,7 @@ func TestWorker_StatusOffline_StopsPublish(t *testing.T) {
 	}
 }
 
-func TestWorker_Stop_CallsCloseNC(t *testing.T) {
+func TestWorkerStopCallsCloseNC(t *testing.T) {
 	closed := false
 	closeNC := func() error {
 		closed = true
@@ -714,7 +716,7 @@ func TestWorker_Stop_CallsCloseNC(t *testing.T) {
 	}
 }
 
-func TestWorker_HandleIncomingCommand_ConfigUpdate_StatusSuccess_SendsACK(t *testing.T) {
+func TestWorkerHandleIncomingCommandConfigUpdateStatusSuccessSendsACK(t *testing.T) {
 	worker, pub, _ := newCommandTestWorker(t)
 
 	status := domain.Paused
@@ -732,7 +734,7 @@ func TestWorker_HandleIncomingCommand_ConfigUpdate_StatusSuccess_SendsACK(t *tes
 	}
 }
 
-func TestWorker_StatusResumeFromPaused(t *testing.T) {
+func TestWorkerStatusResumeFromPaused(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)

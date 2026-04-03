@@ -23,6 +23,8 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/ports"
 )
 
+const telemetryDataWildcardSubject = "telemetry.data.>"
+
 // ─────────────────────────────────────────────────────────────────────────────
 // plainNATSConnector
 //
@@ -128,7 +130,7 @@ func TestE2ECreateGatewayTelemetryArrivesOnNATS(t *testing.T) {
 	// Subscribe to all telemetry subjects before creating the gateway.
 	subConn := connectNATS(t, e.natsURI)
 	msgCh := make(chan *nats.Msg, 20)
-	sub, err := subConn.Subscribe("telemetry.data.>", func(m *nats.Msg) {
+	sub, err := subConn.Subscribe(telemetryDataWildcardSubject, func(m *nats.Msg) {
 		msgCh <- m
 	})
 	require.NoError(t, err)
@@ -344,7 +346,7 @@ func TestE2EInjectNetworkDegradationWorkerAcceptsCommand(t *testing.T) {
 	assert.NoError(t, err, "InjectGatewayAnomaly must not error on a running gateway")
 }
 
-func TestE2EDisconnectAnomaly_TelemetryResumesAfterExpiry(t *testing.T) {
+func TestE2EDisconnectAnomalyTelemetryResumesAfterExpiry(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
@@ -357,7 +359,7 @@ func TestE2EDisconnectAnomaly_TelemetryResumesAfterExpiry(t *testing.T) {
 
 	subConn := connectNATS(t, e.natsURI)
 	msgCh := make(chan *nats.Msg, 20)
-	sub, _ := subConn.Subscribe("telemetry.data.>", func(m *nats.Msg) { msgCh <- m })
+	sub, _ := subConn.Subscribe(telemetryDataWildcardSubject, func(m *nats.Msg) { msgCh <- m })
 	t.Cleanup(func() { sub.Unsubscribe() })
 
 	//Wait for the first message.
@@ -388,7 +390,7 @@ func TestE2EDisconnectAnomaly_TelemetryResumesAfterExpiry(t *testing.T) {
 	}
 }
 
-func TestE2ENetworkDegradation_100PctLoss_StopsTelemetry(t *testing.T) {
+func TestE2ENetworkDegradation100PctLossStopsTelemetry(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
@@ -401,7 +403,7 @@ func TestE2ENetworkDegradation_100PctLoss_StopsTelemetry(t *testing.T) {
 
 	subConn := connectNATS(t, e.natsURI)
 	msgCh := make(chan *nats.Msg, 20)
-	sub, _ := subConn.Subscribe("telemetry.data.>", func(m *nats.Msg) { msgCh <- m })
+	sub, _ := subConn.Subscribe(telemetryDataWildcardSubject, func(m *nats.Msg) { msgCh <- m })
 	t.Cleanup(func() { sub.Unsubscribe() })
 
 	//Wait for the first message.
@@ -436,7 +438,7 @@ func TestE2ENetworkDegradation_100PctLoss_StopsTelemetry(t *testing.T) {
 
 // After InjectSensorOutlier the worker must publish at least one envelope on NATS,
 // proving that an out-of-range value does not break the pipeline.
-func TestE2EOutlierInjection_TelemetryPublished(t *testing.T) {
+func TestE2EOutlierInjectionTelemetryPublished(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
@@ -456,7 +458,7 @@ func TestE2EOutlierInjection_TelemetryPublished(t *testing.T) {
 
 	subConn := connectNATS(t, e.natsURI)
 	msgCh := make(chan *nats.Msg, 10)
-	sub, err := subConn.Subscribe("telemetry.data.>", func(m *nats.Msg) { msgCh <- m })
+	sub, err := subConn.Subscribe(telemetryDataWildcardSubject, func(m *nats.Msg) { msgCh <- m })
 	require.NoError(t, err)
 	t.Cleanup(func() { sub.Unsubscribe() }) //nolint:errcheck
 

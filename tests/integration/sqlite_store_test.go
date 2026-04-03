@@ -16,11 +16,13 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
 )
 
+const tenantOneID = "tenant-1"
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Gateway CRUD
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestSQLiteStore_CreateAndGetGateway(t *testing.T) {
+func TestSQLiteStoreCreateAndGetGateway(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
@@ -33,7 +35,7 @@ func TestSQLiteStore_CreateAndGetGateway(t *testing.T) {
 		FirmwareVersion:     "1.0.0",
 		SendFrequencyMs:     1000,
 		Status:              domain.Provisioning,
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		CreatedAt:           time.Now().UTC().Truncate(time.Second),
 		EncryptionKey:       validAESKey(t),
 	}
@@ -50,14 +52,14 @@ func TestSQLiteStore_CreateAndGetGateway(t *testing.T) {
 	assert.Equal(t, gw.Status, got.Status)
 }
 
-func TestSQLiteStore_GetGatewayByManagementID(t *testing.T) {
+func TestSQLiteStoreGetGatewayByManagementID(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	mgmtID := uuid.New()
 	id, err := store.CreateGateway(ctx, domain.SimGateway{
 		ManagementGatewayID: mgmtID,
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		Status:              domain.Provisioning,
 		EncryptionKey:       validAESKey(t),
 	})
@@ -69,7 +71,7 @@ func TestSQLiteStore_GetGatewayByManagementID(t *testing.T) {
 	assert.Equal(t, mgmtID, got.ManagementGatewayID)
 }
 
-func TestSQLiteStore_GetGatewayByManagementID_NotFound(t *testing.T) {
+func TestSQLiteStoreGetGatewayByManagementIDNotFound(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
@@ -77,7 +79,7 @@ func TestSQLiteStore_GetGatewayByManagementID_NotFound(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestSQLiteStore_ListGateways_Empty(t *testing.T) {
+func TestSQLiteStoreListGatewaysEmpty(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
@@ -86,14 +88,14 @@ func TestSQLiteStore_ListGateways_Empty(t *testing.T) {
 	assert.Empty(t, list)
 }
 
-func TestSQLiteStore_ListGateways_Multiple(t *testing.T) {
+func TestSQLiteStoreListGatewaysMultiple(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
 		_, err := store.CreateGateway(ctx, domain.SimGateway{
 			ManagementGatewayID: uuid.New(),
-			TenantID:            "tenant-1",
+			TenantID:            tenantOneID,
 			Status:              domain.Provisioning,
 			EncryptionKey:       validAESKey(t),
 		})
@@ -105,13 +107,13 @@ func TestSQLiteStore_ListGateways_Multiple(t *testing.T) {
 	assert.Len(t, list, 3)
 }
 
-func TestSQLiteStore_UpdateProvisioned(t *testing.T) {
+func TestSQLiteStoreUpdateProvisioned(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	id, err := store.CreateGateway(ctx, domain.SimGateway{
 		ManagementGatewayID: uuid.New(),
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		Status:              domain.Provisioning,
 		EncryptionKey:       validAESKey(t),
 	})
@@ -131,13 +133,13 @@ func TestSQLiteStore_UpdateProvisioned(t *testing.T) {
 	assert.Equal(t, []byte("key-pem"), got.PrivateKeyPEM)
 }
 
-func TestSQLiteStore_UpdateStatus(t *testing.T) {
+func TestSQLiteStoreUpdateStatus(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	id, err := store.CreateGateway(ctx, domain.SimGateway{
 		ManagementGatewayID: uuid.New(),
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		Status:              domain.Provisioning,
 		EncryptionKey:       validAESKey(t),
 	})
@@ -150,13 +152,13 @@ func TestSQLiteStore_UpdateStatus(t *testing.T) {
 	assert.Equal(t, domain.Online, got.Status)
 }
 
-func TestSQLiteStore_UpdateFirmwareVersion(t *testing.T) {
+func TestSQLiteStoreUpdateFirmwareVersion(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	id, err := store.CreateGateway(ctx, domain.SimGateway{
 		ManagementGatewayID: uuid.New(),
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		FirmwareVersion:     "1.0.0",
 		Status:              domain.Provisioning,
 		EncryptionKey:       validAESKey(t),
@@ -170,13 +172,13 @@ func TestSQLiteStore_UpdateFirmwareVersion(t *testing.T) {
 	assert.Equal(t, "2.0.0", got.FirmwareVersion)
 }
 
-func TestSQLiteStore_DeleteGateway(t *testing.T) {
+func TestSQLiteStoreDeleteGateway(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	id, err := store.CreateGateway(ctx, domain.SimGateway{
 		ManagementGatewayID: uuid.New(),
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		Status:              domain.Provisioning,
 		EncryptionKey:       validAESKey(t),
 	})
@@ -192,13 +194,13 @@ func TestSQLiteStore_DeleteGateway(t *testing.T) {
 // Sensor CRUD
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestSQLiteStore_CreateAndGetSensor(t *testing.T) {
+func TestSQLiteStoreCreateAndGetSensor(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	gwID, err := store.CreateGateway(ctx, domain.SimGateway{
 		ManagementGatewayID: uuid.New(),
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		Status:              domain.Provisioning,
 		EncryptionKey:       validAESKey(t),
 	})
@@ -226,13 +228,13 @@ func TestSQLiteStore_CreateAndGetSensor(t *testing.T) {
 	assert.Equal(t, domain.UniformRandom, got.Algorithm)
 }
 
-func TestSQLiteStore_ListSensors(t *testing.T) {
+func TestSQLiteStoreListSensors(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	gwID, err := store.CreateGateway(ctx, domain.SimGateway{
 		ManagementGatewayID: uuid.New(),
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		Status:              domain.Provisioning,
 		EncryptionKey:       validAESKey(t),
 	})
@@ -254,7 +256,7 @@ func TestSQLiteStore_ListSensors(t *testing.T) {
 	assert.Len(t, list, 3)
 }
 
-func TestSQLiteStore_ListSensors_IsolatedByGateway(t *testing.T) {
+func TestSQLiteStoreListSensorsIsolatedByGateway(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
@@ -274,7 +276,7 @@ func TestSQLiteStore_ListSensors_IsolatedByGateway(t *testing.T) {
 	assert.Len(t, list2, 1)
 }
 
-func TestSQLiteStore_DeleteSensor(t *testing.T) {
+func TestSQLiteStoreDeleteSensor(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
@@ -293,7 +295,7 @@ func TestSQLiteStore_DeleteSensor(t *testing.T) {
 	assert.Error(t, err, "sensor should not exist after deletion")
 }
 
-func TestSQLiteStore_GetSensor_NotFound(t *testing.T) {
+func TestSQLiteStoreGetSensorNotFound(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
@@ -307,7 +309,7 @@ func TestSQLiteStore_GetSensor_NotFound(t *testing.T) {
 
 // TestSQLiteStore_DataSurvivesReopen verifies that records written to SQLite
 // survive a close/reopen cycle (i.e. actually written to disk, not just RAM).
-func TestSQLiteStore_DataSurvivesReopen(t *testing.T) {
+func TestSQLiteStoreDataSurvivesReopen(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := dir + "/test.db"
 	ctx := context.Background()
@@ -343,14 +345,14 @@ func TestSQLiteStore_DataSurvivesReopen(t *testing.T) {
 	}
 }
 
-func TestSQLiteStore_GetGateway_NoEncryptionKey(t *testing.T) {
+func TestSQLiteStoreGetGatewayNoEncryptionKey(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	//Gateway created without an encryption key (not provisioned).
 	id, err := store.CreateGateway(ctx, domain.SimGateway{
 		ManagementGatewayID: uuid.New(),
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		Status:              domain.Provisioning,
 		// empty encKeyBytes.
 	})
@@ -363,7 +365,7 @@ func TestSQLiteStore_GetGateway_NoEncryptionKey(t *testing.T) {
 	assert.Equal(t, domain.EncryptionKey{}, got.EncryptionKey)
 }
 
-func TestSQLiteStore_TenantIsolation_GatewaysNotShared(t *testing.T) {
+func TestSQLiteStoreTenantIsolationGatewaysNotShared(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
@@ -389,13 +391,13 @@ func TestSQLiteStore_TenantIsolation_GatewaysNotShared(t *testing.T) {
 	assert.Equal(t, 1, tenants["tenant-B"], "tenant-B should have exactly 1 gateway")
 }
 
-func TestSQLiteStore_UpdateFrequency(t *testing.T) {
+func TestSQLiteStoreUpdateFrequency(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
 	id, err := store.CreateGateway(ctx, domain.SimGateway{
 		ManagementGatewayID: uuid.New(),
-		TenantID:            "tenant-1",
+		TenantID:            tenantOneID,
 		Status:              domain.Provisioning,
 		EncryptionKey:       validAESKey(t),
 	})
@@ -408,7 +410,7 @@ func TestSQLiteStore_UpdateFrequency(t *testing.T) {
 	assert.Equal(t, 2000, got.SendFrequencyMs)
 }
 
-func TestSQLiteStore_UpdateFrequency_NotFound(t *testing.T) {
+func TestSQLiteStoreUpdateFrequencyNotFound(t *testing.T) {
 	store := newSQLiteStore(t)
 	ctx := context.Background()
 
@@ -416,7 +418,7 @@ func TestSQLiteStore_UpdateFrequency_NotFound(t *testing.T) {
 	assert.Error(t, err, "UpdateFrequency on non-existent gateway must error")
 }
 
-func TestSQLiteStore_RunMigrations_Idempotent(t *testing.T) {
+func TestSQLiteStoreRunMigrationsIdempotent(t *testing.T) {
 	store := newSQLiteStore(t) // already runs migrations once
 	ctx := context.Background()
 
@@ -425,7 +427,7 @@ func TestSQLiteStore_RunMigrations_Idempotent(t *testing.T) {
 		"RunMigrations must be idempotent — running twice must not error")
 }
 
-func TestSQLiteStore_ScanGateway_InvalidUUID_ReturnsError(t *testing.T) {
+func TestSQLiteStoreScanGatewayInvalidUUIDReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := dir + "/test.db"
 	ctx := context.Background()

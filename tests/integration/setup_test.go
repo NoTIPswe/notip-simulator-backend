@@ -35,6 +35,8 @@ type natsEnv struct {
 	URI string
 }
 
+const natsPortTCP = "4222/tcp"
+
 // startNATS spins up a real NATS 2.10 container and returns its URI.
 // The container is terminated automatically via t.Cleanup.
 func startNATS(t *testing.T) *natsEnv {
@@ -94,7 +96,7 @@ func TestMain(m *testing.M) {
 	natsC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "nats:latest",
-			ExposedPorts: []string{"4222/tcp"},
+			ExposedPorts: []string{natsPortTCP},
 			Cmd:          []string{"-js"}, // Abilita JetStream
 			WaitingFor:   wait.ForLog("Server is ready"),
 		},
@@ -107,7 +109,7 @@ func TestMain(m *testing.M) {
 
 	// Ip and Port.
 	host, _ := natsC.Host(ctx)
-	port, _ := natsC.MappedPort(ctx, "4222/tcp")
+	port, _ := natsC.MappedPort(ctx, natsPortTCP)
 	sharedPlainNATSURI = fmt.Sprintf("nats://%s:%s", host, port.Port())
 
 	// Execute the tests.
@@ -304,7 +306,7 @@ func setupSecureNATS(t *testing.T) *secureNATSEnv {
 	natsC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "nats:latest",
-			ExposedPorts: []string{"4222/tcp"},
+			ExposedPorts: []string{natsPortTCP},
 			Cmd:          []string{"-c", "/etc/nats/nats.conf"},
 			Files: []testcontainers.ContainerFile{
 				{HostFilePath: confPath, ContainerFilePath: "/etc/nats/nats.conf", FileMode: 0o644},
@@ -322,7 +324,7 @@ func setupSecureNATS(t *testing.T) *secureNATSEnv {
 
 	natsHost, err := natsC.Host(ctx)
 	require.NoError(t, err)
-	natsPort, err := natsC.MappedPort(ctx, "4222/tcp")
+	natsPort, err := natsC.MappedPort(ctx, natsPortTCP)
 	require.NoError(t, err)
 
 	return &secureNATSEnv{

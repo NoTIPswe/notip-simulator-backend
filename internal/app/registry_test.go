@@ -14,7 +14,11 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/fakes"
 )
 
-const unexpected_error = "unexpected error: %v"
+const (
+	unexpectedErrorMsg           = "unexpected error: %v"
+	msgExpectedErrUnknownGateway = "expected error for unknown gateway"
+	msgExpectedErrUnknownWorker  = "expected error for unknown worker"
+)
 
 // testWriter redirects standard output to the Go testing framework.
 type testWriter struct {
@@ -79,7 +83,7 @@ func makeCreateReq() domain.CreateGatewayRequest {
 }
 
 // CreateAndStart.
-func TestCreateAndStart_Success(t *testing.T) {
+func TestCreateAndStartSuccess(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -87,7 +91,7 @@ func TestCreateAndStart_Success(t *testing.T) {
 
 	gw, err := reg.CreateAndStart(context.Background(), makeCreateReq())
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if gw == nil {
 		t.Fatal("expected non-nil gateway")
@@ -103,7 +107,7 @@ func TestCreateAndStart_Success(t *testing.T) {
 	}
 }
 
-func TestCreateAndStart_StoreCreateFails(t *testing.T) {
+func TestCreateAndStartStoreCreateFails(t *testing.T) {
 	d := newTestDeps()
 	d.store.ErrCreateGateway = fakes.ErrSimulated
 	reg := newTestRegistry(d)
@@ -114,7 +118,7 @@ func TestCreateAndStart_StoreCreateFails(t *testing.T) {
 	}
 }
 
-func TestCreateAndStart_ProvisionerFails_RollsBack(t *testing.T) {
+func TestCreateAndStartProvisionerFailsRollsBack(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Err = fakes.ErrSimulated
 	reg := newTestRegistry(d)
@@ -130,7 +134,7 @@ func TestCreateAndStart_ProvisionerFails_RollsBack(t *testing.T) {
 	}
 }
 
-func TestCreateAndStart_UpdateProvisionedStoreErrorIgnored(t *testing.T) {
+func TestCreateAndStartUpdateProvisionedStoreErrorIgnored(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.store.ErrUpdateProvisioned = fakes.ErrSimulated
@@ -139,14 +143,14 @@ func TestCreateAndStart_UpdateProvisionedStoreErrorIgnored(t *testing.T) {
 
 	gw, err := reg.CreateAndStart(context.Background(), makeCreateReq())
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if gw == nil || gw.Status != domain.Online {
 		t.Fatal("expected online gateway")
 	}
 }
 
-func TestCreateAndStart_ConnectorFails_RollsBack(t *testing.T) {
+func TestCreateAndStartConnectorFailsRollsBack(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.connector.Err = fakes.ErrSimulated
@@ -165,7 +169,7 @@ func TestCreateAndStart_ConnectorFails_RollsBack(t *testing.T) {
 
 //BulkCreateGateways.
 
-func TestBulkCreate_AllSucceed(t *testing.T) {
+func TestBulkCreateAllSucceed(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -191,7 +195,7 @@ func TestBulkCreate_AllSucceed(t *testing.T) {
 	}
 }
 
-func TestBulkCreate_AllFail(t *testing.T) {
+func TestBulkCreateAllFail(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Err = fakes.ErrSimulated
 	reg := newTestRegistry(d)
@@ -206,7 +210,7 @@ func TestBulkCreate_AllFail(t *testing.T) {
 
 //Stop.
 
-func TestStop_Success(t *testing.T) {
+func TestStopSuccess(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -214,21 +218,21 @@ func TestStop_Success(t *testing.T) {
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
 	err := reg.Stop(context.Background(), gw.ManagementGatewayID)
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 }
 
-func TestStop_NotFound(t *testing.T) {
+func TestStopNotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	err := reg.Stop(context.Background(), uuid.New())
 	if err == nil {
-		t.Fatal("expected error for unknown gateway")
+		t.Fatal(msgExpectedErrUnknownGateway)
 	}
 }
 
 //Delete.
 
-func TestDelete_Success(t *testing.T) {
+func TestDeleteSuccess(t *testing.T) {
 	setupTestLogger(t)
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
@@ -237,7 +241,7 @@ func TestDelete_Success(t *testing.T) {
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
 	err := reg.Delete(context.Background(), gw.ManagementGatewayID)
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	_, storeErr := d.store.GetGatewayByManagementID(context.Background(), gw.ManagementGatewayID)
 	if storeErr == nil {
@@ -245,17 +249,17 @@ func TestDelete_Success(t *testing.T) {
 	}
 }
 
-func TestDelete_NotFound(t *testing.T) {
+func TestDeleteNotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	err := reg.Delete(context.Background(), uuid.New())
 	if err == nil {
-		t.Fatal("expected error for unknown gateway")
+		t.Fatal(msgExpectedErrUnknownGateway)
 	}
 }
 
 //GetGateway/ListGateways.
 
-func TestGetGateway_Success(t *testing.T) {
+func TestGetGatewaySuccess(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -264,33 +268,33 @@ func TestGetGateway_Success(t *testing.T) {
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
 	got, err := reg.GetGateway(context.Background(), gw.ManagementGatewayID)
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if got.ManagementGatewayID != gw.ManagementGatewayID {
 		t.Error("returned wrong gateway")
 	}
 }
 
-func TestGetGateway_NotFound(t *testing.T) {
+func TestGetGatewayNotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	_, err := reg.GetGateway(context.Background(), uuid.New())
 	if err == nil {
-		t.Fatal("expected error for unknown gateway")
+		t.Fatal(msgExpectedErrUnknownGateway)
 	}
 }
 
-func TestListGateways_Empty(t *testing.T) {
+func TestListGatewaysEmpty(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	gws, err := reg.ListGateways(context.Background())
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if len(gws) != 0 {
 		t.Errorf("want 0 gateways, got %d", len(gws))
 	}
 }
 
-func TestListGateways_Multiple(t *testing.T) {
+func TestListGatewaysMultiple(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -301,14 +305,14 @@ func TestListGateways_Multiple(t *testing.T) {
 
 	gws, err := reg.ListGateways(context.Background())
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if len(gws) != 2 {
 		t.Errorf("want 2 gateways, got %d", len(gws))
 	}
 }
 
-func TestListGateways_StoreError(t *testing.T) {
+func TestListGatewaysStoreError(t *testing.T) {
 	d := newTestDeps()
 	d.store.ErrListGateways = fakes.ErrSimulated
 	reg := newTestRegistry(d)
@@ -321,7 +325,7 @@ func TestListGateways_StoreError(t *testing.T) {
 
 //AddSensor/ListSensors/DeleteSensor.
 
-func TestAddSensor_Success(t *testing.T) {
+func TestAddSensorSuccess(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -336,7 +340,7 @@ func TestAddSensor_Success(t *testing.T) {
 		Algorithm: domain.UniformRandom,
 	})
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if sensor == nil {
 		t.Fatal("expected non-nil sensor")
@@ -346,7 +350,7 @@ func TestAddSensor_Success(t *testing.T) {
 	}
 }
 
-func TestAddSensor_StoreError(t *testing.T) {
+func TestAddSensorStoreError(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.store.ErrCreateSensor = fakes.ErrSimulated
@@ -362,7 +366,7 @@ func TestAddSensor_StoreError(t *testing.T) {
 	}
 }
 
-func TestListSensors_Success(t *testing.T) {
+func TestListSensorsSuccess(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -387,14 +391,14 @@ func TestListSensors_Success(t *testing.T) {
 
 	sensors, err := reg.ListSensors(context.Background(), gw.ID)
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if len(sensors) != 2 {
 		t.Errorf("want 2 sensors, got %d", len(sensors))
 	}
 }
 
-func TestDeleteSensor_Success(t *testing.T) {
+func TestDeleteSensorSuccess(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -415,11 +419,11 @@ func TestDeleteSensor_Success(t *testing.T) {
 
 	err = reg.DeleteSensor(context.Background(), sensor.ID)
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 }
 
-func TestDeleteSensor_StoreError(t *testing.T) {
+func TestDeleteSensorStoreError(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.store.ErrDeleteSensor = fakes.ErrSimulated
@@ -447,7 +451,7 @@ func TestDeleteSensor_StoreError(t *testing.T) {
 
 //UpdateConfig.
 
-func TestUpdateConfig_Success(t *testing.T) {
+func TestUpdateConfigSuccess(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -459,23 +463,23 @@ func TestUpdateConfig_Success(t *testing.T) {
 		SendFrequencyMs: &freq,
 	})
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 }
 
-func TestUpdateConfig_WorkerNotFound(t *testing.T) {
+func TestUpdateConfigWorkerNotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	freq := 200
 	err := reg.UpdateConfig(context.Background(), uuid.New(), domain.GatewayConfigUpdate{
 		SendFrequencyMs: &freq,
 	})
 	if err == nil {
-		t.Fatal("expected error for unknown worker")
+		t.Fatal(msgExpectedErrUnknownWorker)
 	}
 }
 
 // InjectGatewayAnomaly.
-func TestInjectAnomaly_NetworkDegradation(t *testing.T) {
+func TestInjectAnomalyNetworkDegradation(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -490,11 +494,11 @@ func TestInjectAnomaly_NetworkDegradation(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 }
 
-func TestInjectAnomaly_Disconnect(t *testing.T) {
+func TestInjectAnomalyDisconnect(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -506,22 +510,22 @@ func TestInjectAnomaly_Disconnect(t *testing.T) {
 		Disconnect: &domain.DisconnectParams{DurationSeconds: 1},
 	})
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 }
 
-func TestInjectAnomaly_WorkerNotFound(t *testing.T) {
+func TestInjectAnomalyWorkerNotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	err := reg.InjectGatewayAnomaly(context.Background(), uuid.New(), domain.GatewayAnomalyCommand{
 		Type: domain.NetworkDegradation,
 	})
 	if err == nil {
-		t.Fatal("expected error for unknown worker")
+		t.Fatal(msgExpectedErrUnknownWorker)
 	}
 }
 
 // InjectSensorOutlier.
-func TestInjectSensorOutlier_Success(t *testing.T) {
+func TestInjectSensorOutlierSuccess(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -535,11 +539,11 @@ func TestInjectSensorOutlier_Success(t *testing.T) {
 	val := 9999.9
 	err := reg.InjectSensorOutlier(context.Background(), sensor.ID, &val)
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 }
 
-func TestInjectSensorOutlier_SensorNotInWorker(t *testing.T) {
+func TestInjectSensorOutlierSensorNotInWorker(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -552,17 +556,17 @@ func TestInjectSensorOutlier_SensorNotInWorker(t *testing.T) {
 	}
 }
 
-func TestInjectSensorOutlier_WorkerNotFound(t *testing.T) {
+func TestInjectSensorOutlierWorkerNotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	err := reg.InjectSensorOutlier(context.Background(), 99999, nil) // non-existing sensor ID.
 	if err == nil {
-		t.Fatal("expected error for unknown worker")
+		t.Fatal(msgExpectedErrUnknownWorker)
 	}
 }
 
 //HandleDecommission
 
-func TestHandleDecommission_Success(t *testing.T) {
+func TestHandleDecommissionSuccess(t *testing.T) {
 	setupTestLogger(t)
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
@@ -579,20 +583,20 @@ func TestHandleDecommission_Success(t *testing.T) {
 	}
 }
 
-func TestHandleDecommission_InvalidUUID_NoPanic(t *testing.T) {
+func TestHandleDecommissionInvalidUUIDNoPanic(t *testing.T) {
 	setupTestLogger(t)
 	reg := newTestRegistry(newTestDeps())
 	reg.HandleDecommission("tenant1", "not-a-valid-uuid")
 }
 
-func TestHandleDecommission_UnknownGateway_NoPanic(t *testing.T) {
+func TestHandleDecommissionUnknownGatewayNoPanic(t *testing.T) {
 	setupTestLogger(t)
 	reg := newTestRegistry(newTestDeps())
 	reg.HandleDecommission("tenant1", uuid.New().String())
 }
 
 // StopAll.
-func TestStopAll_MultipleRunning(t *testing.T) {
+func TestStopAllMultipleRunning(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -612,22 +616,22 @@ func TestStopAll_MultipleRunning(t *testing.T) {
 	}
 }
 
-func TestStopAll_Empty_NoPanic(t *testing.T) {
+func TestStopAllEmptyNoPanic(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	reg.StopAll(time.Second)
 }
 
 //RestoreAll.
 
-func TestRestoreAll_NoGateways(t *testing.T) {
+func TestRestoreAllNoGateways(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	err := reg.RestoreAll(context.Background())
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 }
 
-func TestRestoreAll_StoreListError(t *testing.T) {
+func TestRestoreAllStoreListError(t *testing.T) {
 	d := newTestDeps()
 	d.store.ErrListGateways = fakes.ErrSimulated
 	reg := newTestRegistry(d)
@@ -638,7 +642,7 @@ func TestRestoreAll_StoreListError(t *testing.T) {
 	}
 }
 
-func TestRestoreAll_WithProvisionedGateway(t *testing.T) {
+func TestRestoreAllWithProvisionedGateway(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -658,7 +662,7 @@ func TestRestoreAll_WithProvisionedGateway(t *testing.T) {
 	defer reg.StopAll(time.Second)
 }
 
-func TestRegistryStart_StoppedGateway_Restarts(t *testing.T) {
+func TestRegistryStartStoppedGatewayRestarts(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -679,7 +683,7 @@ func TestRegistryStart_StoppedGateway_Restarts(t *testing.T) {
 	}
 }
 
-func TestRegistryStart_NotFound_ReturnsError(t *testing.T) {
+func TestRegistryStartNotFoundReturnsError(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	err := reg.Start(context.Background(), uuid.New())
 	if err == nil {
@@ -687,7 +691,7 @@ func TestRegistryStart_NotFound_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestRegistryStart_AlreadyRunning_IsIdempotent(t *testing.T) {
+func TestRegistryStartAlreadyRunningIsIdempotent(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -701,7 +705,7 @@ func TestRegistryStart_AlreadyRunning_IsIdempotent(t *testing.T) {
 	}
 }
 
-func TestCompensate_ConnectorFails_PubAndSubClosed(t *testing.T) {
+func TestCompensateConnectorFailsPubAndSubClosed(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.connector.Err = fakes.ErrSimulated
@@ -718,7 +722,7 @@ func TestCompensate_ConnectorFails_PubAndSubClosed(t *testing.T) {
 	}
 }
 
-func TestCompensate_StoreUpdateProvisionedErrorIgnored(t *testing.T) {
+func TestCompensateStoreUpdateProvisionedErrorIgnored(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.store.ErrUpdateProvisioned = fakes.ErrSimulated
@@ -727,7 +731,7 @@ func TestCompensate_StoreUpdateProvisionedErrorIgnored(t *testing.T) {
 
 	gw, err := reg.CreateAndStart(context.Background(), makeCreateReq())
 	if err != nil {
-		t.Fatalf(unexpected_error, err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	gws, _ := d.store.ListGateways(context.Background())
 	if len(gws) != 1 {
@@ -738,7 +742,7 @@ func TestCompensate_StoreUpdateProvisionedErrorIgnored(t *testing.T) {
 	}
 }
 
-func TestDelete_StoreDeleteFails_ReturnsError(t *testing.T) {
+func TestDeleteStoreDeleteFailsReturnsError(t *testing.T) {
 	setupTestLogger(t)
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
@@ -753,7 +757,7 @@ func TestDelete_StoreDeleteFails_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestUpdateConfig_ChannelFull_DoesNotBlock(t *testing.T) {
+func TestUpdateConfigChannelFullDoesNotBlock(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -774,7 +778,7 @@ func TestUpdateConfig_ChannelFull_DoesNotBlock(t *testing.T) {
 	}
 }
 
-func TestInjectAnomaly_ChannelFull_DoesNotBlock(t *testing.T) {
+func TestInjectAnomalyChannelFullDoesNotBlock(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -799,7 +803,7 @@ func TestInjectAnomaly_ChannelFull_DoesNotBlock(t *testing.T) {
 	}
 }
 
-func TestRestoreAll_ConnectorFails_ContinuesOtherGateways(t *testing.T) {
+func TestRestoreAllConnectorFailsContinuesOtherGateways(t *testing.T) {
 	setupTestLogger(t)
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
@@ -821,7 +825,7 @@ func TestRestoreAll_ConnectorFails_ContinuesOtherGateways(t *testing.T) {
 
 }
 
-func TestRestoreAll_ListSensorsFails_HandledGracefully(t *testing.T) {
+func TestRestoreAllListSensorsFailsHandledGracefully(t *testing.T) {
 	setupTestLogger(t)
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
@@ -841,7 +845,7 @@ func TestRestoreAll_ListSensorsFails_HandledGracefully(t *testing.T) {
 	}
 }
 
-func TestInjectSensorOutlier_NilValue_UsesDefault(t *testing.T) {
+func TestInjectSensorOutlierNilValueUsesDefault(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -860,7 +864,7 @@ func TestInjectSensorOutlier_NilValue_UsesDefault(t *testing.T) {
 	}
 }
 
-func TestAddSensor_InvalidRange_ReturnsError(t *testing.T) {
+func TestAddSensorInvalidRangeReturnsError(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -884,7 +888,7 @@ func TestAddSensor_InvalidRange_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestHandleDecommission_TenantMismatch_Ignored(t *testing.T) {
+func TestHandleDecommissionTenantMismatchIgnored(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -901,7 +905,7 @@ func TestHandleDecommission_TenantMismatch_Ignored(t *testing.T) {
 	}
 }
 
-func TestDelete_CancelsCommandPump(t *testing.T) {
+func TestDeleteCancelsCommandPump(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -918,7 +922,7 @@ func TestDelete_CancelsCommandPump(t *testing.T) {
 	}
 }
 
-func TestStop_NotFound_ReturnsErrGatewayNotFound(t *testing.T) {
+func TestStopNotFoundReturnsErrGatewayNotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	err := reg.Stop(context.Background(), uuid.New())
 	if !errors.Is(err, domain.ErrGatewayNotFound) {
@@ -926,7 +930,7 @@ func TestStop_NotFound_ReturnsErrGatewayNotFound(t *testing.T) {
 	}
 }
 
-func TestDelete_NotFound_ReturnsErrGatewayNotFound(t *testing.T) {
+func TestDeleteNotFoundReturnsErrGatewayNotFound(t *testing.T) {
 	reg := newTestRegistry(newTestDeps())
 	err := reg.Delete(context.Background(), uuid.New())
 	if !errors.Is(err, domain.ErrGatewayNotFound) {
