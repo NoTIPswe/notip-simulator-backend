@@ -48,7 +48,7 @@ lint:
 
 test:
 	@echo "Running unit tests..."
-	go test -coverprofile=coverage.out ./...
+	go test -coverpkg=./... -coverprofile=coverage.out ./...
 
 integration-test:
 	@echo "Executing integration tests..."
@@ -56,7 +56,7 @@ integration-test:
 
 cover:
 	@echo "Running tests with coverage..."
-	go test -race -coverprofile=coverage.out ./...
+	go test -race -coverpkg=./... -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out
 
 ## Contracts
