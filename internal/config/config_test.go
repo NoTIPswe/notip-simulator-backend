@@ -7,6 +7,8 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/config"
 )
 
+const unexpectedErrorMsg = "unexpected error: %v"
+
 func setEnv(t *testing.T, pairs ...string) {
 	t.Helper()
 	for i := 0; i < len(pairs); i += 2 {
@@ -23,11 +25,11 @@ func requiredEnv(t *testing.T) {
 	)
 }
 
-func TestLoad_AllRequiredEnvSet_Success(t *testing.T) {
+func TestLoadAllRequiredEnvSetSuccess(t *testing.T) {
 	requiredEnv(t)
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.ProvisioningURL != "http://provisioning:3000" {
 		t.Errorf("ProvisioningURL mismatch: %s", cfg.ProvisioningURL)
@@ -37,11 +39,11 @@ func TestLoad_AllRequiredEnvSet_Success(t *testing.T) {
 	}
 }
 
-func TestLoad_Defaults_Applied(t *testing.T) {
+func TestLoadDefaultsApplied(t *testing.T) {
 	requiredEnv(t)
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.SQLitePath == "" {
 		t.Error("SQLitePath default should not be empty")
@@ -57,7 +59,7 @@ func TestLoad_Defaults_Applied(t *testing.T) {
 	}
 }
 
-func TestLoad_MissingProvisioningURL_ReturnsError(t *testing.T) {
+func TestLoadMissingProvisioningURLReturnsError(t *testing.T) {
 	requiredEnv(t)
 	_ = os.Unsetenv("PROVISIONING_URL")
 
@@ -67,7 +69,7 @@ func TestLoad_MissingProvisioningURL_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestLoad_MissingNATSUrl_ReturnsError(t *testing.T) {
+func TestLoadMissingNATSUrlReturnsError(t *testing.T) {
 	requiredEnv(t)
 	_ = os.Unsetenv("NATS_URL")
 
@@ -77,7 +79,7 @@ func TestLoad_MissingNATSUrl_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestLoad_MissingCACertPath_ReturnsError(t *testing.T) {
+func TestLoadMissingCACertPathReturnsError(t *testing.T) {
 	requiredEnv(t)
 	_ = os.Unsetenv("NATS_CA_CERT_PATH")
 
@@ -87,49 +89,85 @@ func TestLoad_MissingCACertPath_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestLoad_RecoveryMode_DefaultFalse(t *testing.T) {
+func TestLoadRecoveryModeDefaultFalse(t *testing.T) {
 	requiredEnv(t)
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.RecoveryMode != false {
 		t.Error("RecoveryMode should default to false")
 	}
 }
 
-func TestLoad_RecoveryMode_TrueWhenSet(t *testing.T) {
+func TestLoadRecoveryModeTrueWhenSet(t *testing.T) {
 	requiredEnv(t)
 	t.Setenv("RECOVERY_MODE", "true")
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if !cfg.RecoveryMode {
 		t.Error("expected RecoveryMode to be true")
 	}
 }
 
-func TestLoad_CustomHTTPAddr(t *testing.T) {
+func TestLoadCustomHTTPAddr(t *testing.T) {
 	requiredEnv(t)
 	t.Setenv("HTTP_ADDR", ":9999")
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.HTTPAddr != ":9999" {
 		t.Errorf("expected :9999, got %s", cfg.HTTPAddr)
 	}
 }
 
-func TestLoad_CustomSendFrequency(t *testing.T) {
+func TestLoadCustomSendFrequency(t *testing.T) {
 	requiredEnv(t)
 	t.Setenv("DEFAULT_SEND_FREQUENCY_MS", "2500")
 	cfg, err := config.Load()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.DefaultSendFrequencyMs != 2500 {
 		t.Errorf("expected 2500, got %d", cfg.DefaultSendFrequencyMs)
+	}
+}
+
+func TestLoadInvalidSendFrequencyUsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("DEFAULT_SEND_FREQUENCY_MS", "0")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+	if cfg.DefaultSendFrequencyMs != 5000 {
+		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+	}
+}
+
+func TestLoadNegativeSendFrequencyUsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("DEFAULT_SEND_FREQUENCY_MS", "-1")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+	if cfg.DefaultSendFrequencyMs != 5000 {
+		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+	}
+}
+
+func TestLoadInvalidBufferSizeUsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("GATEWAY_BUFFER_SIZE", "0")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+	if cfg.GatewayBufferSize != 1000 {
+		t.Errorf("expected fallback 1000, got %d", cfg.GatewayBufferSize)
 	}
 }

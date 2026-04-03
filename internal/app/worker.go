@@ -50,6 +50,7 @@ type GatewayWorker struct {
 	generators []generator.Generator
 	buffer     *MessageBuffer
 	publisher  ports.GatewayPublisher
+	closeNC    func() error
 	encryptor  ports.Encryptor
 	clock      ports.Nower
 
@@ -64,6 +65,8 @@ type GatewayWorker struct {
 	outlierCh     chan domain.SensorOutlierCommand
 	configCh      chan domain.GatewayConfigUpdate
 	activeAnomaly *activeAnomalyState
+
+	commandPumpCancel context.CancelFunc
 }
 
 type WorkerDeps struct {
@@ -71,6 +74,7 @@ type WorkerDeps struct {
 	Sensors    []*domain.SimSensor
 	Generators []generator.Generator
 	Publisher  ports.GatewayPublisher
+	CloseNC    func() error
 	Encryptor  ports.Encryptor
 	Clock      ports.Nower
 	Buffer     *MessageBuffer
@@ -83,6 +87,7 @@ func NewGatewayWorker(deps WorkerDeps) *GatewayWorker {
 		sensors:    deps.Sensors,
 		generators: deps.Generators,
 		publisher:  deps.Publisher,
+		closeNC:    deps.CloseNC,
 		encryptor:  deps.Encryptor,
 		clock:      deps.Clock,
 		buffer:     deps.Buffer,
@@ -95,11 +100,17 @@ func NewGatewayWorker(deps WorkerDeps) *GatewayWorker {
 	}
 }
 
-func (w *GatewayWorker) AddSensor(sensor *domain.SimSensor, gen generator.Generator) {
+func (w *GatewayWorker) AttachSensor(sensor *domain.SimSensor, gen generator.Generator) error {
+	if sensor.MinRange >= sensor.MaxRange {
+		return fmt.Errorf("%w: minRange %.2f must be less than maxRange %.2f", domain.ErrInvalidSensorRange, sensor.MinRange, sensor.MaxRange)
+	}
+
 	w.sensorMu.Lock()
 	defer w.sensorMu.Unlock()
 	w.sensors = append(w.sensors, sensor)
 	w.generators = append(w.generators, gen)
+
+	return nil
 }
 
 func (w *GatewayWorker) Start(ctx context.Context) {
@@ -126,6 +137,9 @@ func (w *GatewayWorker) Stop(timeout time.Duration) {
 	}
 	if w.publisherClosed.CompareAndSwap(false, true) {
 		_ = w.publisher.Close()
+		if w.closeNC != nil {
+			_ = w.closeNC()
+		}
 	}
 }
 
@@ -168,14 +182,14 @@ func (w *GatewayWorker) sensorLoop(ctx context.Context) {
 		case cmd := <-w.commandCh:
 			w.handleIncomingCommand(ctx, cmd)
 		case <-tickC:
-			w.processTick(ctx, ticker)
+			w.processTick(ticker)
 		}
 	}
 }
 
-func (w *GatewayWorker) processTick(ctx context.Context, ticker *time.Ticker) {
+func (w *GatewayWorker) processTick(ticker *time.Ticker) {
 	w.drainControlChannels(ticker)
-	w.checkAnomalyExpiry(ctx)
+	w.checkAnomalyExpiry()
 	w.publishSensorData()
 }
 
@@ -183,8 +197,15 @@ func (w *GatewayWorker) drainControlChannels(ticker *time.Ticker) {
 	select {
 	case cfg := <-w.configCh:
 		if cfg.SendFrequencyMs != nil {
+			if *cfg.SendFrequencyMs <= 0 {
+				slog.Warn("ignoring invalid send frequency update", "gatewayID", w.gateway.ManagementGatewayID, "sendFrequencyMs", *cfg.SendFrequencyMs)
+				break
+			}
 			w.gateway.SendFrequencyMs = *cfg.SendFrequencyMs
 			ticker.Reset(time.Duration(w.gateway.SendFrequencyMs) * time.Millisecond)
+		}
+		if cfg.Status != nil {
+			w.gateway.Status = *cfg.Status
 		}
 	default:
 	}
@@ -218,7 +239,7 @@ drainOutliers:
 	}
 }
 
-func (w *GatewayWorker) checkAnomalyExpiry(ctx context.Context) {
+func (w *GatewayWorker) checkAnomalyExpiry() {
 	if w.activeAnomaly == nil {
 		return
 	}
@@ -229,19 +250,11 @@ func (w *GatewayWorker) checkAnomalyExpiry(ctx context.Context) {
 	if w.clock.Now().Before(w.activeAnomaly.expiresAt) {
 		return
 	}
-
-	if w.activeAnomaly.anomalyType == domain.Disconnect {
-		if err := w.publisher.Reconnect(ctx); err != nil {
-			slog.Error("reconnect failed", "gatewayID", w.gateway.ManagementGatewayID, "err", err)
-			return
-		}
-		w.publisherClosed.Store(false)
-	}
 	w.activeAnomaly = nil
 }
 
 func (w *GatewayWorker) publishSensorData() {
-	if w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.Disconnect {
+	if w.isCommunicationBlocked() {
 		return
 	}
 
@@ -249,34 +262,46 @@ func (w *GatewayWorker) publishSensorData() {
 	defer w.sensorMu.RUnlock()
 
 	for i, sensor := range w.sensors {
-		value := w.generators[i].Next()
-		innerData := innerSensorData{Value: value, Unit: getUnitForSensor(sensor.Type)}
-		innerBytes, err := json.Marshal(innerData)
-		if err != nil {
-			slog.Error("failed to marshal sensor data", "sensorID", sensor.SensorID, "err", err)
-			continue
-		}
-
-		payload, err := w.encryptor.Encrypt(w.gateway.EncryptionKey, innerBytes)
-		if err != nil {
-			continue
-		}
-
-		envelope := w.buildEnvelope(*sensor, payload)
-		envBytes, err := json.Marshal(envelope)
-		if err != nil {
-			slog.Error("failed to marshal telemetry envelope", "sensorID", sensor.SensorID, "err", err)
-			continue
-		}
-
-		if w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.NetworkDegradation {
-			if rand.Float64() < w.activeAnomaly.packetLossPct {
-				continue
-			}
-		}
-
-		w.buffer.Send(envBytes)
+		w.sendSensorTelemetry(sensor, w.generators[i])
 	}
+}
+
+func (w *GatewayWorker) isCommunicationBlocked() bool {
+	isDisconnected := w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.Disconnect
+	isNotOnline := w.gateway.Status == domain.Paused || w.gateway.Status == domain.Offline
+	return isDisconnected || isNotOnline
+}
+
+func (w *GatewayWorker) sendSensorTelemetry(sensor *domain.SimSensor, gen generator.Generator) {
+	value := gen.Next()
+	innerData := innerSensorData{Value: value, Unit: getUnitForSensor(sensor.Type)}
+
+	innerBytes, err := json.Marshal(innerData)
+	if err != nil {
+		slog.Error("failed to marshal sensor data", "sensorID", sensor.SensorID, "err", err)
+		return
+	}
+
+	payload, err := w.encryptor.Encrypt(w.gateway.EncryptionKey, innerBytes)
+	if err != nil {
+		return
+	}
+
+	envelope := w.buildEnvelope(*sensor, payload)
+	envBytes, err := json.Marshal(envelope)
+	if err != nil {
+		slog.Error("failed to marshal telemetry envelope", "sensorID", sensor.SensorID, "err", err)
+		return
+	}
+
+	// Network Degradation.
+	if w.activeAnomaly != nil && w.activeAnomaly.anomalyType == domain.NetworkDegradation {
+		if rand.Float64() < w.activeAnomaly.packetLossPct {
+			return
+		}
+	}
+
+	w.buffer.Send(envBytes)
 }
 
 func (w *GatewayWorker) handleAnomalyCommand(cmd domain.GatewayAnomalyCommand) {
@@ -296,10 +321,6 @@ func (w *GatewayWorker) handleAnomalyCommand(cmd domain.GatewayAnomalyCommand) {
 	case domain.Disconnect:
 		if cmd.Disconnect != nil {
 			state.expiresAt = w.clock.Now().Add(time.Duration(cmd.Disconnect.DurationSeconds) * time.Second)
-		}
-
-		if w.publisherClosed.CompareAndSwap(false, true) {
-			_ = w.publisher.Close()
 		}
 	}
 	w.activeAnomaly = state
@@ -341,6 +362,9 @@ func (w *GatewayWorker) handleConfigUpdateCommand(ctx context.Context, payload [
 	}
 
 	if p.SendFrequencyMs != nil {
+		if *p.SendFrequencyMs <= 0 {
+			return domain.NACK, messagePtr("sendFrequencyMs must be > 0")
+		}
 		if err := w.store.UpdateFrequency(ctx, w.gateway.ID, *p.SendFrequencyMs); err != nil {
 			return domain.NACK, messagePtr(fmt.Sprintf("failed to update frequency in store: %v", err))
 		}

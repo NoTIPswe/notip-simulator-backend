@@ -39,7 +39,7 @@ func validCmd(issuedAt time.Time) []byte {
 
 func intPtr(v int) *int { return &v }
 
-func TestSubscriber_HandleMsg_ValidCommand_EnqueuedAndAcked(t *testing.T) {
+func TestSubscriberHandleMsgValidCommandEnqueuedAndAcked(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	pub := &fakes.FakePublisher{}
 	s := newSubscriberForTest(clk, pub)
@@ -57,7 +57,7 @@ func TestSubscriber_HandleMsg_ValidCommand_EnqueuedAndAcked(t *testing.T) {
 	}
 }
 
-func TestSubscriber_HandleMsg_ExpiredCommand_ACKAndDiscard(t *testing.T) {
+func TestSubscriberHandleMsgExpiredCommandACKAndDiscard(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	pub := &fakes.FakePublisher{}
 	s := newSubscriberForTest(clk, pub)
@@ -88,7 +88,7 @@ func TestSubscriber_HandleMsg_ExpiredCommand_ACKAndDiscard(t *testing.T) {
 	}
 }
 
-func TestSubscriber_HandleMsg_InvalidJSON_Termed(t *testing.T) {
+func TestSubscriberHandleMsgInvalidJSONTermed(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	pub := &fakes.FakePublisher{}
 	s := newSubscriberForTest(clk, pub)
@@ -106,7 +106,7 @@ func TestSubscriber_HandleMsg_InvalidJSON_Termed(t *testing.T) {
 	}
 }
 
-func TestSubscriber_HandleMsg_ChannelFull_Nacked(t *testing.T) {
+func TestSubscriberHandleMsgChannelFullNacked(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	pub := &fakes.FakePublisher{}
 	s := &NATSGatewaySubscriber{
@@ -126,7 +126,7 @@ func TestSubscriber_HandleMsg_ChannelFull_Nacked(t *testing.T) {
 	}
 }
 
-func TestSubscriber_Messages_ReturnsChan(t *testing.T) {
+func TestSubscriberMessagesReturnsChan(t *testing.T) {
 	s := newSubscriberForTest(fakes.NewFakeClock(time.Now()), &fakes.FakePublisher{})
 	ch := s.Messages()
 	if ch == nil {
@@ -134,7 +134,7 @@ func TestSubscriber_Messages_ReturnsChan(t *testing.T) {
 	}
 }
 
-func TestSubscriber_Close_DrainsChan(t *testing.T) {
+func TestSubscriberCloseDrainsChan(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	pub := &fakes.FakePublisher{}
 	s := newSubscriberForTest(clk, pub)
@@ -143,11 +143,10 @@ func TestSubscriber_Close_DrainsChan(t *testing.T) {
 	s.ch <- domain.IncomingCommand{CommandID: "x", Type: domain.ConfigUpdate, IssuedAt: clk.Now()}
 
 	// Close should not panic even with a pending message.
-	// (real sub.Drain() is nil here, so we just verify Close doesn't crash).
-	_ = s.Close
+	_ = s.Close()
 }
 
-func TestSubscriber_FirmwarePush_EnqueuedCorrectly(t *testing.T) {
+func TestSubscriberFirmwarePushEnqueuedCorrectly(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	pub := &fakes.FakePublisher{}
 	s := newSubscriberForTest(clk, pub)

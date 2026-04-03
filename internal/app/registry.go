@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -30,8 +31,8 @@ const (
 	stageProvision provisioningStage = iota
 	stageStore
 	stageConnect
-	stageStart
-	errNotFoundFormat = "%w: %s"
+	errNotFoundFormat     = "%w: %s"
+	bulkCreateConcurrency = 10
 )
 
 type GatewayRegistry struct {
@@ -70,26 +71,22 @@ func NewGatewayRegistry(
 // GatewayLifecycleService methods.
 
 func (r *GatewayRegistry) CreateAndStart(ctx context.Context, req domain.CreateGatewayRequest) (*domain.SimGateway, error) {
-	managementID := uuid.New()
+	sendFrequency := req.SendFrequencyMs
+	if sendFrequency <= 0 {
+		sendFrequency = r.cfg.DefaultSendFrequencyMs
+	}
 
+	// ManagementGatewayID and TenantID are assigned by the provisioning service and set inside runProvisioningSaga.
 	gw := domain.SimGateway{
-		ManagementGatewayID: managementID,
-		FactoryID:           req.FactoryID,
-		FactoryKey:          req.FactoryKey,
-		SerialNumber:        req.SerialNumber,
-		Model:               req.Model,
-		FirmwareVersion:     req.FirmwareVersion,
-		SendFrequencyMs:     req.SendFrequencyMs,
-		Status:              domain.Provisioning,
-		TenantID:            req.TenantID,
-		CreatedAt:           r.clock.Now(),
+		FactoryID:       req.FactoryID,
+		FactoryKey:      req.FactoryKey,
+		SerialNumber:    req.SerialNumber,
+		Model:           req.Model,
+		FirmwareVersion: req.FirmwareVersion,
+		SendFrequencyMs: sendFrequency,
+		Status:          domain.Provisioning,
+		CreatedAt:       r.clock.Now(),
 	}
-
-	id, err := r.store.CreateGateway(ctx, gw)
-	if err != nil {
-		return nil, fmt.Errorf("create gateway in store: %w", err)
-	}
-	gw.ID = id
 
 	if err := r.runProvisioningSaga(ctx, &gw); err != nil {
 		return nil, err
@@ -102,14 +99,15 @@ func (r *GatewayRegistry) BulkCreateGateways(ctx context.Context, req domain.Bul
 	results := make([]*domain.SimGateway, req.Count)
 	errs := make([]error, req.Count)
 
+	sem := make(chan struct{}, bulkCreateConcurrency)
 	var wg sync.WaitGroup
 	for i := 0; i < req.Count; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			gw, err := r.CreateAndStart(ctx, domain.CreateGatewayRequest{
-				Name:            fmt.Sprintf("SIM-%d", idx),
-				TenantID:        req.TenantID,
 				FactoryID:       req.FactoryID,
 				FactoryKey:      req.FactoryKey,
 				SerialNumber:    fmt.Sprintf("SN-SIM-%d", idx),
@@ -140,7 +138,7 @@ func (r *GatewayRegistry) Start(ctx context.Context, managementID uuid.UUID) err
 	}
 
 	w.Start(ctx)
-	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Running)
+	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Online)
 }
 
 func (r *GatewayRegistry) Stop(ctx context.Context, managementID uuid.UUID) error {
@@ -152,11 +150,14 @@ func (r *GatewayRegistry) Stop(ctx context.Context, managementID uuid.UUID) erro
 		return fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
 	}
 
+	if w.commandPumpCancel != nil {
+		w.commandPumpCancel()
+	}
 	w.Stop(workerStopTimeout)
-	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Stopped)
+	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Offline)
 }
 
-func (r *GatewayRegistry) Decommission(ctx context.Context, managementID uuid.UUID) error {
+func (r *GatewayRegistry) Delete(ctx context.Context, managementID uuid.UUID) error {
 	r.mu.Lock()
 	w, ok := r.workers[managementID]
 	if ok {
@@ -168,6 +169,9 @@ func (r *GatewayRegistry) Decommission(ctx context.Context, managementID uuid.UU
 		return fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
 	}
 
+	if w.commandPumpCancel != nil {
+		w.commandPumpCancel()
+	}
 	w.Stop(workerStopTimeout)
 
 	if err := r.store.DeleteGateway(ctx, w.gateway.ID); err != nil {
@@ -185,7 +189,10 @@ func (r *GatewayRegistry) ListGateways(ctx context.Context) ([]*domain.SimGatewa
 func (r *GatewayRegistry) GetGateway(ctx context.Context, managementID uuid.UUID) (*domain.SimGateway, error) {
 	gw, err := r.store.GetGatewayByManagementID(ctx, managementID)
 	if err != nil {
-		return nil, fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
+		if errors.Is(err, domain.ErrGatewayNotFound) {
+			return nil, fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
+		}
+		return nil, fmt.Errorf("get gateway: %w", err)
 	}
 	return gw, nil
 }
@@ -193,6 +200,10 @@ func (r *GatewayRegistry) GetGateway(ctx context.Context, managementID uuid.UUID
 // SensorManagementService methods.
 
 func (r *GatewayRegistry) AddSensor(ctx context.Context, gatewayID int64, sensor domain.SimSensor) (*domain.SimSensor, error) {
+	if sensor.MinRange >= sensor.MaxRange {
+		return nil, fmt.Errorf("%w: minRange %.2f must be less than maxRange %.2f", domain.ErrInvalidSensorRange, sensor.MinRange, sensor.MaxRange)
+	}
+
 	sensor.SensorID = uuid.New()
 	sensor.GatewayID = gatewayID
 	sensor.CreatedAt = r.clock.Now()
@@ -208,7 +219,10 @@ func (r *GatewayRegistry) AddSensor(ctx context.Context, gatewayID int64, sensor
 	for _, w := range r.workers {
 		if w.gateway.ID == gatewayID {
 			gen := generator.NewGeneratorFactory().New(&sensor, r.clock)
-			w.AddSensor(&sensor, gen)
+			err := w.AttachSensor(&sensor, gen)
+			if err != nil {
+				return nil, fmt.Errorf("failed to attach sensor to worker: %w", err)
+			}
 			break
 		}
 	}
@@ -265,7 +279,10 @@ func (r *GatewayRegistry) InjectGatewayAnomaly(ctx context.Context, managementID
 func (r *GatewayRegistry) InjectSensorOutlier(ctx context.Context, sensorID int64, value *float64) error {
 	sensor, err := r.store.GetSensor(ctx, sensorID)
 	if err != nil {
-		return fmt.Errorf("%w: sensor %d", domain.ErrSensorNotFound, sensorID)
+		if errors.Is(err, domain.ErrSensorNotFound) {
+			return fmt.Errorf("%w: sensor %d", domain.ErrSensorNotFound, sensorID)
+		}
+		return fmt.Errorf("get sensor: %w", err)
 	}
 
 	r.mu.RLock()
@@ -321,14 +338,14 @@ func (r *GatewayRegistry) restoreGateway(ctx context.Context, gw *domain.SimGate
 		return fmt.Errorf("list sensors for gateway %d: %w", gw.ID, err)
 	}
 
-	pub, sub, err := r.connector.Connect(ctx, gw.CertPEM, gw.PrivateKeyPEM, gw.TenantID, gw.ManagementGatewayID)
+	pub, sub, closeNC, err := r.connector.Connect(ctx, gw.CertPEM, gw.PrivateKeyPEM, gw.TenantID, gw.ManagementGatewayID)
 	if err != nil {
 		return fmt.Errorf("connect to NATS: %w", err)
 	}
 
-	if _, err := r.startWorker(ctx, gw, sensors, pub, sub); err != nil {
-		_ = pub.Close()
+	if _, err := r.startWorker(ctx, gw, sensors, pub, sub, closeNC); err != nil {
 		_ = sub.Close()
+		_ = closeNC()
 		return err
 	}
 
@@ -342,70 +359,84 @@ func (r *GatewayRegistry) runProvisioningSaga(ctx context.Context, gw *domain.Si
 		reachedStage provisioningStage
 	)
 
-	result, err := r.provisioner.Onboard(ctx, gw.FactoryID, gw.FactoryKey, gw.TenantID, gw.ManagementGatewayID)
+	// Stage 1: Provision — identity (gatewayId, tenantId) is assigned by the provisioning service.
+	// Nothing is stored yet, so no compensation needed if this fails.
+	result, err := r.provisioner.Onboard(ctx, gw.FactoryID, gw.FactoryKey, gw.SendFrequencyMs, gw.FirmwareVersion)
 	if err != nil {
-		r.compensate(ctx, gw, stageProvision, pub, sub)
 		r.metrics.ProvisioningErrors.Inc()
 		return fmt.Errorf("onboard: %w", err)
 	}
+
+	mgmtID, err := uuid.Parse(result.GatewayID)
+	if err != nil {
+		r.metrics.ProvisioningErrors.Inc()
+		return fmt.Errorf("parse gateway ID from provisioning: %w", err)
+	}
+	gw.ManagementGatewayID = mgmtID
+	gw.TenantID = result.TenantID
 	gw.CertPEM = result.CertPEM
 	gw.PrivateKeyPEM = result.PrivateKeyPEM
 	gw.EncryptionKey = result.AESKey
-	reachedStage = stageProvision
-
-	if err := r.store.UpdateProvisioned(ctx, gw.ID, result); err != nil {
-		r.compensate(ctx, gw, reachedStage, pub, sub)
-		r.metrics.ProvisioningErrors.Inc()
-		return fmt.Errorf("update provisioned gateway: %w", err)
-	}
 	gw.Provisioned = true
+
+	// Stage 2: Persist with the full provisioned state.
+	id, err := r.store.CreateGateway(ctx, *gw)
+	if err != nil {
+		r.metrics.ProvisioningErrors.Inc()
+		return fmt.Errorf("create gateway in store: %w", err)
+	}
+	gw.ID = id
 	reachedStage = stageStore
 
-	pub, sub, err = r.connector.Connect(ctx, gw.CertPEM, gw.PrivateKeyPEM, gw.TenantID, gw.ManagementGatewayID)
+	// Stage 3: Connect.
+	var closeNC func() error
+	pub, sub, closeNC, err = r.connector.Connect(ctx, gw.CertPEM, gw.PrivateKeyPEM, gw.TenantID, gw.ManagementGatewayID)
 	if err != nil {
-		r.compensate(ctx, gw, reachedStage, pub, sub)
+		r.compensate(ctx, gw, reachedStage, sub, nil)
 		r.metrics.ProvisioningErrors.Inc()
 		return fmt.Errorf("connect: %w", err)
 	}
 	reachedStage = stageConnect
 
+	// Stage 4: Start worker.
 	sensors, err := r.store.ListSensors(ctx, gw.ID)
 	if err != nil {
-		r.compensate(ctx, gw, reachedStage, pub, sub)
+		r.compensate(ctx, gw, reachedStage, sub, closeNC)
 		r.metrics.ProvisioningErrors.Inc()
 		return fmt.Errorf("list sensors: %w", err)
 	}
 
-	if _, err := r.startWorker(ctx, gw, sensors, pub, sub); err != nil {
-		r.compensate(ctx, gw, reachedStage, pub, sub)
+	if _, err := r.startWorker(ctx, gw, sensors, pub, sub, closeNC); err != nil {
+		r.compensate(ctx, gw, reachedStage, sub, closeNC)
 		r.metrics.ProvisioningErrors.Inc()
 		return err
 	}
 
-	gw.Status = domain.Running
-
+	gw.Status = domain.Online
 	r.metrics.ProvisioningSuccess.Inc()
 	return nil
 }
 
-func (r *GatewayRegistry) compensate(ctx context.Context, gw *domain.SimGateway, failedAt provisioningStage, pub ports.GatewayPublisher, sub ports.CommandSubscription) {
+func (r *GatewayRegistry) compensate(ctx context.Context, gw *domain.SimGateway, failedAt provisioningStage, sub ports.CommandSubscription, closeNC func() error) {
 	switch failedAt {
-	case stageStart, stageConnect:
-		if pub != nil {
-			_ = pub.Close()
-		}
+	case stageConnect:
 		if sub != nil {
 			_ = sub.Close()
 		}
+		if closeNC != nil {
+			_ = closeNC()
+		}
 		fallthrough
-	case stageStore, stageProvision:
+	case stageStore:
 		if err := r.store.DeleteGateway(ctx, gw.ID); err != nil {
 			slog.Error("compensate: delete gateway failed", "err", err)
 		}
+	case stageProvision:
+		// nothing persisted yet — nothing to roll back
 	}
 }
 
-func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway, sensors []*domain.SimSensor, pub ports.GatewayPublisher, sub ports.CommandSubscription) (*GatewayWorker, error) {
+func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway, sensors []*domain.SimSensor, pub ports.GatewayPublisher, sub ports.CommandSubscription, closeNC func() error) (*GatewayWorker, error) {
 	gens := make([]generator.Generator, len(sensors))
 	factory := generator.NewGeneratorFactory()
 	for i, s := range sensors {
@@ -420,6 +451,7 @@ func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway
 		Sensors:    sensors,
 		Generators: gens,
 		Publisher:  pub,
+		CloseNC:    closeNC,
 		Encryptor:  r.encryptor,
 		Clock:      r.clock,
 		Buffer:     buf,
@@ -428,14 +460,15 @@ func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway
 
 	w := NewGatewayWorker(deps)
 	w.Start(ctx)
-	done := w.done // capture channel value before goroutine spawn to avoid race with future Start() calls
+	commandPumpCtx, cancelCommandPump := context.WithCancel(ctx)
+	w.commandPumpCancel = cancelCommandPump
 
 	go func() {
 		defer func() { _ = sub.Close() }()
 		messages := sub.Messages()
 		for {
 			select {
-			case <-done:
+			case <-commandPumpCtx.Done():
 				return
 			case cmd, ok := <-messages:
 				if !ok {
@@ -456,7 +489,7 @@ func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway
 
 	r.metrics.GatewaysRunning.Inc()
 
-	if err := r.store.UpdateStatus(ctx, gw.ID, domain.Running); err != nil {
+	if err := r.store.UpdateStatus(ctx, gw.ID, domain.Online); err != nil {
 		slog.Warn("failed to update gateway status to running", "gatewayID", gw.ManagementGatewayID, "err", err)
 	}
 
@@ -476,9 +509,21 @@ func (r *GatewayRegistry) HandleDecommission(tenantID, managementGatewayID strin
 		r.mu.Unlock()
 		return
 	}
+	if w.gateway.TenantID != tenantID {
+		r.mu.Unlock()
+		slog.Warn("decommission event tenant mismatch, ignoring",
+			"eventTenantID", tenantID,
+			"gatewayTenantID", w.gateway.TenantID,
+			"mgmID", mgmID,
+		)
+		return
+	}
 	delete(r.workers, mgmID)
 	r.mu.Unlock()
 
+	if w.commandPumpCancel != nil {
+		w.commandPumpCancel()
+	}
 	w.Stop(10 * time.Second)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -504,6 +549,9 @@ func (r *GatewayRegistry) StopAll(timeout time.Duration) {
 		wg.Add(1)
 		go func(worker *GatewayWorker) {
 			defer wg.Done()
+			if worker.commandPumpCancel != nil {
+				worker.commandPumpCancel()
+			}
 			worker.Stop(timeout)
 		}(w)
 	}

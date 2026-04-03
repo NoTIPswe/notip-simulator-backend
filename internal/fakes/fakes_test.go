@@ -88,29 +88,29 @@ func TestFakeCommandSubscription_Behavior(t *testing.T) {
 
 func TestFakeConnector_Connect(t *testing.T) {
 	c := &FakeConnector{}
-	pub, sub, err := c.Connect(context.Background(), nil, nil, "t", uuid.New())
+	pub, sub, closeNC, err := c.Connect(context.Background(), nil, nil, "t", uuid.New())
 	if err != nil {
 		t.Fatalf("connect failed: %v", err)
 	}
-	if pub == nil || sub == nil {
-		t.Fatal("expected publisher and subscriber")
+	if pub == nil || sub == nil || closeNC == nil {
+		t.Fatal("expected publisher, subscriber and closeNC")
 	}
 
 	c.Err = ErrSimulated
-	if _, _, err := c.Connect(context.Background(), nil, nil, "t", uuid.New()); err == nil {
+	if _, _, _, err := c.Connect(context.Background(), nil, nil, "t", uuid.New()); err == nil {
 		t.Fatal("expected connect error")
 	}
 }
 
-func TestFakeProvisioningClient_Onboard(t *testing.T) {
+func TestFakeProvisioningClientOnboard(t *testing.T) {
 	p := &FakeProvisioningClient{Err: ErrSimulated}
-	if _, err := p.Onboard(context.Background(), "f", "k", "t", uuid.New()); err == nil {
+	if _, err := p.Onboard(context.Background(), "f", "k", 100, "fw-1.0"); err == nil {
 		t.Fatal("expected onboard error")
 	}
 
 	p.Err = nil
 	p.Result = domain.ProvisionResult{CertPEM: []byte("cert")}
-	res, err := p.Onboard(context.Background(), "f", "k", "t", uuid.New())
+	res, err := p.Onboard(context.Background(), "f", "k", 100, "fw-1.0")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestFakeGatewayStore_GatewayCRUDAndUpdates(t *testing.T) {
 		t.Fatalf("expected 1 gateway, got %d err=%v", len(list), err)
 	}
 
-	if err := s.UpdateStatus(context.Background(), id, domain.Running); err != nil {
+	if err := s.UpdateStatus(context.Background(), id, domain.Online); err != nil {
 		t.Fatalf("update status failed: %v", err)
 	}
 	if err := s.UpdateFrequency(context.Background(), id, 250); err != nil {
@@ -211,7 +211,7 @@ func TestFakeGatewayStore_ErrorPaths(t *testing.T) {
 	s.ErrListGateways = nil
 
 	s.ErrUpdateStatus = ErrSimulated
-	if err := s.UpdateStatus(context.Background(), id, domain.Running); err == nil {
+	if err := s.UpdateStatus(context.Background(), id, domain.Online); err == nil {
 		t.Fatal("expected update status error")
 	}
 	s.ErrUpdateStatus = nil
@@ -252,7 +252,7 @@ func TestFakeGatewayLifecycleService_DefaultsAndCallbacks(t *testing.T) {
 	if err := svc.Stop(context.Background(), uuid.New()); err != nil {
 		t.Fatalf("default Stop should not error: %v", err)
 	}
-	if err := svc.Decommission(context.Background(), uuid.New()); err != nil {
+	if err := svc.Delete(context.Background(), uuid.New()); err != nil {
 		t.Fatalf("default Decommission should not error: %v", err)
 	}
 	if _, err := svc.ListGateways(context.Background()); err != nil {

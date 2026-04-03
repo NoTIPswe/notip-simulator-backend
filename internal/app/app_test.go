@@ -25,6 +25,7 @@ const (
 	testLocalNATSURL    = "nats://127.0.0.1:4222"
 	testProvisioningURL = "http://provisioning.local"
 	testMissingCACert   = "/definitely/missing/ca.pem"
+	msgUnexpectedError  = "unexpected error: %v"
 )
 
 func writeTempCACert(t *testing.T) string {
@@ -67,10 +68,10 @@ func writeTempCACert(t *testing.T) string {
 }
 
 func newHTTPServerForAppTests(addr string) *httpadapter.HTTPServer {
-	gw := httpadapter.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{}, &fakes.FakeSimulatorControlService{})
+	gw := httpadapter.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
 	sensor := httpadapter.NewSensorHandler(&fakes.FakeSensorManagementService{})
 	anomaly := httpadapter.NewAnomalyHandler(&fakes.FakeSimulatorControlService{})
-	return httpadapter.NewHTTPServer(addr, "", gw, sensor, anomaly)
+	return httpadapter.NewHTTPServer(addr, gw, sensor, anomaly)
 }
 
 func TestSetupDatabaseSuccess(t *testing.T) {
@@ -121,7 +122,7 @@ func TestSetupDecommissionListenerParseCACertFails(t *testing.T) {
 		t.Fatal("expected parse CA cert error")
 	}
 	if !strings.Contains(err.Error(), "failed to parse global NATS ca cert") {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(msgUnexpectedError, err)
 	}
 }
 
@@ -138,7 +139,7 @@ func TestSetupDecommissionListenerConnectFails(t *testing.T) {
 		t.Fatal("expected connect failure with unreachable NATS")
 	}
 	if !strings.Contains(err.Error(), "global nats connect") {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(msgUnexpectedError, err)
 	}
 }
 
@@ -210,7 +211,7 @@ func TestRunConfigLoadFails(t *testing.T) {
 		t.Fatal("expected run to fail when required config is missing")
 	}
 	if !strings.Contains(err.Error(), "load config") {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(msgUnexpectedError, err)
 	}
 }
 
@@ -225,7 +226,7 @@ func TestRunSetupDatabaseFails(t *testing.T) {
 		t.Fatal("expected run to fail when sqlite path parent does not exist")
 	}
 	if !strings.Contains(err.Error(), "run sqlite migrations") {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(msgUnexpectedError, err)
 	}
 }
 
@@ -240,6 +241,6 @@ func TestRunCreateNATSConnectorFails(t *testing.T) {
 		t.Fatal("expected run to fail when NATS connector cannot load CA")
 	}
 	if !strings.Contains(err.Error(), "create NATS connector") {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(msgUnexpectedError, err)
 	}
 }

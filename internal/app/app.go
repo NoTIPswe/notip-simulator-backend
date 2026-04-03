@@ -108,6 +108,18 @@ func setupDecommissionListener(ctx context.Context, cfg *config.Config, registry
 			MinVersion: tls.VersionTLS13,
 		}),
 		natsio.MaxReconnects(-1),
+		natsio.ReconnectWait(2*time.Second),
+		natsio.ReconnectJitter(500*time.Millisecond, 2*time.Second),
+		natsio.PingInterval(20*time.Second),
+		natsio.DisconnectErrHandler(func(_ *natsio.Conn, err error) {
+			slog.Warn("global NATS disconnected", "error", err)
+		}),
+		natsio.ReconnectHandler(func(_ *natsio.Conn) {
+			slog.Info("global NATS reconnected")
+		}),
+		natsio.ClosedHandler(func(_ *natsio.Conn) {
+			slog.Error("global NATS connection permanently closed")
+		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("global nats connect: %w", err)
@@ -145,13 +157,12 @@ func startMetricsServer(addr string, errCh chan<- error) *nethttp.Server {
 }
 
 func startAPIServer(cfg *config.Config, registry *GatewayRegistry, errCh chan<- error) *httpadapter.HTTPServer {
-	gwHandler := httpadapter.NewGatewayHandler(registry, registry)
+	gwHandler := httpadapter.NewGatewayHandler(registry)
 	sensorHandler := httpadapter.NewSensorHandler(registry)
 	anomalyHandler := httpadapter.NewAnomalyHandler(registry)
 
 	srv := httpadapter.NewHTTPServer(
 		cfg.HTTPAddr,
-		cfg.SimTokenSecret,
 		gwHandler,
 		sensorHandler,
 		anomalyHandler,

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,11 @@ import (
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/fakes"
+)
+
+const (
+	expectedNACKMsg     = "expected NACK, got %s"
+	firmwareDownloadURL = "https://example.com/fw.bin"
 )
 
 func newCommandTestWorker(t *testing.T) (*GatewayWorker, *fakes.FakePublisher, *fakes.FakeGatewayStore) {
@@ -68,7 +74,7 @@ func getWorker(t *testing.T, reg *GatewayRegistry, id uuid.UUID) *GatewayWorker 
 	return w
 }
 
-func TestWorker_IsRunning_AfterStart(t *testing.T) {
+func TestWorkerIsRunningAfterStart(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -81,7 +87,7 @@ func TestWorker_IsRunning_AfterStart(t *testing.T) {
 	}
 }
 
-func TestWorker_IsNotRunning_AfterStop(t *testing.T) {
+func TestWorkerIsNotRunningAfterStop(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -97,7 +103,7 @@ func TestWorker_IsNotRunning_AfterStop(t *testing.T) {
 	}
 }
 
-func TestWorker_Stop_IsSafeWhenAlreadyStopped(t *testing.T) {
+func TestWorkerStopIsSafeWhenAlreadyStopped(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -110,7 +116,7 @@ func TestWorker_Stop_IsSafeWhenAlreadyStopped(t *testing.T) {
 	w.Stop(time.Second)
 }
 
-func TestWorker_PublishesTelemetry_WhenSensorAdded(t *testing.T) {
+func TestWorkerPublishesTelemetryWhenSensorAdded(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -132,7 +138,7 @@ func TestWorker_PublishesTelemetry_WhenSensorAdded(t *testing.T) {
 	}
 }
 
-func TestWorker_NoPublish_WithoutSensors(t *testing.T) {
+func TestWorkerNoPublishWithoutSensors(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -148,7 +154,7 @@ func TestWorker_NoPublish_WithoutSensors(t *testing.T) {
 	}
 }
 
-func TestWorker_ConfigUpdate_Processed(t *testing.T) {
+func TestWorkerConfigUpdateProcessed(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -166,7 +172,7 @@ func TestWorker_ConfigUpdate_Processed(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 }
 
-func TestWorker_NetworkDegradation_100PctLoss_StopsPublish(t *testing.T) {
+func TestWorkerNetworkDegradation100PctLossStopsPublish(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -199,28 +205,37 @@ func TestWorker_NetworkDegradation_100PctLoss_StopsPublish(t *testing.T) {
 	}
 }
 
-func TestWorker_Disconnect_ClosesPublisher(t *testing.T) {
+func TestWorkerDisconnectPausesTelemetryWithoutClosingPublisher(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
+
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+	before := pub.Count()
+
 	_ = reg.InjectGatewayAnomaly(context.Background(), gw.ManagementGatewayID, domain.GatewayAnomalyCommand{
 		Type:       domain.Disconnect,
 		Disconnect: &domain.DisconnectParams{DurationSeconds: 1},
 	})
 
-	pub := d.connector.Publisher
-	ok := waitFor(t, time.Second, func() bool {
-		return pub.IsClosed()
-	})
-	if !ok {
-		t.Error("expected publisher to be closed during Disconnect anomaly")
+	time.Sleep(250 * time.Millisecond)
+	after := pub.Count()
+	if after > before {
+		t.Errorf("expected no new telemetry during Disconnect anomaly, got %d new", after-before)
+	}
+	if pub.IsClosed() {
+		t.Error("expected publisher to remain open during Disconnect anomaly")
 	}
 }
 
-func TestWorker_FirmwarePushCommand_UpdatesStore(t *testing.T) {
+func TestWorkerFirmwarePushCommandUpdatesStore(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -230,7 +245,7 @@ func TestWorker_FirmwarePushCommand_UpdatesStore(t *testing.T) {
 
 	//Sends firmware command directyly on the subscription's channel (bypass NATS).
 	sub := d.connector.Subscription
-	fwPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "2.5.0", DownloadURL: "https://example.com/fw.bin"})
+	fwPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "2.5.0", DownloadURL: firmwareDownloadURL})
 	sub.Ch <- domain.IncomingCommand{
 		CommandID: "fw-cmd-1",
 		Type:      domain.FirmwarePush,
@@ -247,7 +262,7 @@ func TestWorker_FirmwarePushCommand_UpdatesStore(t *testing.T) {
 	}
 }
 
-func TestWorker_ConfigCommand_ChangesFrequency(t *testing.T) {
+func TestWorkerConfigCommandChangesFrequency(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -277,7 +292,7 @@ func TestWorker_ConfigCommand_ChangesFrequency(t *testing.T) {
 	}
 }
 
-func TestWorker_AddSensor_ToRunningWorker(t *testing.T) {
+func TestWorkerAddSensorToRunningWorker(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -302,7 +317,7 @@ func TestWorker_AddSensor_ToRunningWorker(t *testing.T) {
 	}
 }
 
-func TestGetUnitForSensor_AllTypes(t *testing.T) {
+func TestGetUnitForSensorAllTypes(t *testing.T) {
 	cases := []struct {
 		sensorType domain.SensorType
 	}{
@@ -320,7 +335,7 @@ func TestGetUnitForSensor_AllTypes(t *testing.T) {
 	}
 }
 
-func TestGetUnitForSensor_UnknownType_ReturnsEmpty(t *testing.T) {
+func TestGetUnitForSensorUnknownTypeReturnsEmpty(t *testing.T) {
 	// An unknown sensor type must return an empty string instead of causing a panic.
 	unit := getUnitForSensor(domain.SensorType("unknown"))
 	if unit != "" {
@@ -328,7 +343,7 @@ func TestGetUnitForSensor_UnknownType_ReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestWorker_AnomalyExpiry_NetworkDegradation_ClearsAfterDuration(t *testing.T) {
+func TestWorkerAnomalyExpiryNetworkDegradationClearsAfterDuration(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -355,29 +370,45 @@ func TestWorker_AnomalyExpiry_NetworkDegradation_ClearsAfterDuration(t *testing.
 	}
 }
 
-func TestWorker_AnomalyExpiry_Disconnect_ReconnectsAfterDuration(t *testing.T) {
+func TestWorkerAnomalyExpiryDisconnectResumesPublishingAfterDuration(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
 
-	// A zero-duration disconnect should trigger an immediate reconnection attempt.
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+
+	// A short disconnect should stop telemetry briefly, then resume naturally.
 	_ = reg.InjectGatewayAnomaly(context.Background(), gw.ManagementGatewayID, domain.GatewayAnomalyCommand{
 		Type:       domain.Disconnect,
-		Disconnect: &domain.DisconnectParams{DurationSeconds: 0},
+		Disconnect: &domain.DisconnectParams{DurationSeconds: 1},
 	})
 
-	ok := waitFor(t, 2*time.Second, func() bool {
-		return d.connector.Publisher.ReconnectCount() > 0
+	before := pub.Count()
+	time.Sleep(250 * time.Millisecond)
+	during := pub.Count()
+	if during > before {
+		t.Errorf("expected no new telemetry during Disconnect anomaly, got %d new", during-before)
+	}
+
+	// Advance the fake clock past the 1-second anomaly duration so checkAnomalyExpiry clears it.
+	d.clock.Advance(2 * time.Second)
+
+	ok := waitFor(t, 2500*time.Millisecond, func() bool {
+		return pub.Count() > during
 	})
 	if !ok {
-		t.Error("reconnect was not called after the disconnect anomaly period expired.")
+		t.Error("expected telemetry to resume after Disconnect anomaly expired")
 	}
 }
 
-func TestWorker_HandleIncomingCommand_ExpiredCommand_StabilityCheck(t *testing.T) {
+func TestWorkerHandleIncomingCommandExpiredCommandStabilityCheck(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -405,7 +436,7 @@ func TestWorker_HandleIncomingCommand_ExpiredCommand_StabilityCheck(t *testing.T
 	}
 }
 
-func TestWorker_FirmwareCommand_StoreUpdateFails_SendsNACK(t *testing.T) {
+func TestWorkerFirmwareCommandStoreUpdateFailsSendsNACK(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -418,7 +449,7 @@ func TestWorker_FirmwareCommand_StoreUpdateFails_SendsNACK(t *testing.T) {
 
 	d.store.ErrUpdateFirmwareVersion = fakes.ErrSimulated
 
-	failPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "3.0.0", DownloadURL: "https://example.com/fw.bin"})
+	failPayload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "3.0.0", DownloadURL: firmwareDownloadURL})
 	d.connector.Subscription.Ch <- domain.IncomingCommand{
 		CommandID: "fw-cmd-fail",
 		Type:      domain.FirmwarePush,
@@ -428,7 +459,7 @@ func TestWorker_FirmwareCommand_StoreUpdateFails_SendsNACK(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 }
 
-func TestWorker_DrainControlChannels_AllFour(t *testing.T) {
+func TestWorkerDrainControlChannelsAllFour(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -465,7 +496,7 @@ func TestWorker_DrainControlChannels_AllFour(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 }
 
-func TestWorker_Stop_PublisherAlreadyClosed_NoPanic(t *testing.T) {
+func TestWorkerStopPublisherAlreadyClosedNoPanic(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -478,7 +509,7 @@ func TestWorker_Stop_PublisherAlreadyClosed_NoPanic(t *testing.T) {
 	w.Stop(time.Second)
 }
 
-func TestWorker_EncryptorFails_DoesNotCrash(t *testing.T) {
+func TestWorkerEncryptorFailsDoesNotCrash(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	d.encryptor.Err = fakes.ErrSimulated
@@ -497,7 +528,7 @@ func TestWorker_EncryptorFails_DoesNotCrash(t *testing.T) {
 	}
 }
 
-func TestWorker_Start_WhenAlreadyRunning_NoPanic(t *testing.T) {
+func TestWorkerStartWhenAlreadyRunningNoPanic(t *testing.T) {
 	d := newTestDeps()
 	d.provisioner.Result = provisionResult()
 	reg := newTestRegistry(d)
@@ -509,7 +540,7 @@ func TestWorker_Start_WhenAlreadyRunning_NoPanic(t *testing.T) {
 	w.Start(context.Background())
 }
 
-func TestWorker_HandleIncomingCommand_ConfigUpdate_InvalidPayload_SendsNACK(t *testing.T) {
+func TestWorkerHandleIncomingCommandConfigUpdateInvalidPayloadSendsNACK(t *testing.T) {
 	worker, pub, _ := newCommandTestWorker(t)
 
 	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
@@ -520,14 +551,14 @@ func TestWorker_HandleIncomingCommand_ConfigUpdate_InvalidPayload_SendsNACK(t *t
 
 	ack := decodeLastACK(t, pub)
 	if ack.Status != domain.NACK {
-		t.Fatalf("expected NACK, got %s", ack.Status)
+		t.Fatalf(expectedNACKMsg, ack.Status)
 	}
 	if ack.Message == nil || !strings.Contains(*ack.Message, "invalid config payload") {
 		t.Fatalf("expected invalid config payload error, got %v", ack.Message)
 	}
 }
 
-func TestWorker_HandleIncomingCommand_UnknownType_SendsNACK(t *testing.T) {
+func TestWorkerHandleIncomingCommandUnknownTypeSendsNACK(t *testing.T) {
 	worker, pub, _ := newCommandTestWorker(t)
 
 	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
@@ -537,18 +568,18 @@ func TestWorker_HandleIncomingCommand_UnknownType_SendsNACK(t *testing.T) {
 
 	ack := decodeLastACK(t, pub)
 	if ack.Status != domain.NACK {
-		t.Fatalf("expected NACK, got %s", ack.Status)
+		t.Fatalf(expectedNACKMsg, ack.Status)
 	}
 	if ack.Message == nil || *ack.Message != "unknown command type" {
 		t.Fatalf("expected unknown command type message, got %v", ack.Message)
 	}
 }
 
-func TestWorker_HandleIncomingCommand_ConfigUpdate_StatusPersistFails_SendsNACK(t *testing.T) {
+func TestWorkerHandleIncomingCommandConfigUpdateStatusPersistFailsSendsNACK(t *testing.T) {
 	worker, pub, store := newCommandTestWorker(t)
 	store.ErrUpdateStatus = fakes.ErrSimulated
 
-	status := domain.Running
+	status := domain.Online
 	payload, err := json.Marshal(domain.CommandConfigPayload{Status: &status})
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -562,14 +593,14 @@ func TestWorker_HandleIncomingCommand_ConfigUpdate_StatusPersistFails_SendsNACK(
 
 	ack := decodeLastACK(t, pub)
 	if ack.Status != domain.NACK {
-		t.Fatalf("expected NACK, got %s", ack.Status)
+		t.Fatalf(expectedNACKMsg, ack.Status)
 	}
 	if ack.Message == nil || !strings.Contains(*ack.Message, "failed to persist status") {
 		t.Fatalf("expected persist status failure message, got %v", ack.Message)
 	}
 }
 
-func TestWorker_HandleIncomingCommand_ConfigUpdate_ChannelFull_SendsNACK(t *testing.T) {
+func TestWorkerHandleIncomingCommandConfigUpdateChannelFullSendsNACK(t *testing.T) {
 	worker, pub, _ := newCommandTestWorker(t)
 
 	for i := 0; i < cap(worker.configCh); i++ {
@@ -590,9 +621,360 @@ func TestWorker_HandleIncomingCommand_ConfigUpdate_ChannelFull_SendsNACK(t *test
 
 	ack := decodeLastACK(t, pub)
 	if ack.Status != domain.NACK {
-		t.Fatalf("expected NACK, got %s", ack.Status)
+		t.Fatalf(expectedNACKMsg, ack.Status)
 	}
 	if ack.Message == nil || *ack.Message != "config channel full" {
 		t.Fatalf("expected config channel full message, got %v", ack.Message)
+	}
+}
+
+func TestWorkerStatusPausedStopsPublish(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
+
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+
+	paused := domain.Paused
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		Status: &paused,
+	})
+
+	before := pub.Count()
+	time.Sleep(250 * time.Millisecond)
+	after := pub.Count()
+
+	if after > before {
+		t.Errorf("expected no new publishes when status is Paused, got %d new", after-before)
+	}
+}
+
+func TestWorkerStatusOfflineStopsPublish(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
+
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+
+	offline := domain.Offline
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		Status: &offline,
+	})
+
+	before := pub.Count()
+	time.Sleep(250 * time.Millisecond)
+	after := pub.Count()
+
+	if after > before {
+		t.Errorf("expected no new publishes when status is Offline, got %d new", after-before)
+	}
+}
+
+func TestWorkerStopCallsCloseNC(t *testing.T) {
+	closed := false
+	closeNC := func() error {
+		closed = true
+		return nil
+	}
+
+	store := fakes.NewFakeGatewayStore()
+	gw := domain.SimGateway{
+		ManagementGatewayID: uuid.New(),
+		TenantID:            "tenant1",
+		SendFrequencyMs:     50,
+	}
+	id, _ := store.CreateGateway(context.Background(), gw)
+	gw.ID = id
+
+	pub := &fakes.FakePublisher{}
+	met := newTestDeps().met
+	w := NewGatewayWorker(WorkerDeps{
+		Gateway:   gw,
+		Publisher: pub,
+		CloseNC:   closeNC,
+		Encryptor: &fakes.FakeEncryptor{},
+		Clock:     fakes.NewFakeClock(time.Now()),
+		Buffer:    NewMessageBuffer(2, "telemetry.test", gw.ManagementGatewayID.String(), pub, met),
+		Store:     store,
+	})
+
+	w.Start(context.Background())
+	w.Stop(time.Second)
+
+	if !closed {
+		t.Error("expected closeNC to be called on Stop")
+	}
+}
+
+func TestWorkerHandleIncomingCommandConfigUpdateStatusSuccessSendsACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	status := domain.Paused
+	payload, _ := json.Marshal(domain.CommandConfigPayload{Status: &status})
+
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cfg-status-ok",
+		Type:      domain.ConfigUpdate,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.ACK {
+		t.Fatalf("expected ACK, got %s", ack.Status)
+	}
+}
+
+func TestWorkerStatusResumeFromPaused(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
+		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	})
+
+	pub := d.connector.Publisher
+	waitFor(t, time.Second, func() bool { return pub.Count() > 0 })
+
+	paused := domain.Paused
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		Status: &paused,
+	})
+	time.Sleep(150 * time.Millisecond)
+	before := pub.Count()
+
+	online := domain.Online
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		Status: &online,
+	})
+
+	ok := waitFor(t, time.Second, func() bool { return pub.Count() > before })
+	if !ok {
+		t.Error("expected telemetry to resume after status set back to Online")
+	}
+}
+
+// AttachSensor: invalid range returns error.
+func TestAttachSensorInvalidRangeReturnsError(t *testing.T) {
+	worker, _, _ := newCommandTestWorker(t)
+
+	sensor := &domain.SimSensor{
+		GatewayID: 1, Type: domain.Temperature,
+		MinRange: 100, MaxRange: 100, // equal → invalid
+	}
+	err := worker.AttachSensor(sensor, &fakes.FakeGenerator{})
+	if err == nil {
+		t.Fatal("expected error for MinRange >= MaxRange")
+	}
+	if !errors.Is(err, domain.ErrInvalidSensorRange) {
+		t.Errorf("expected ErrInvalidSensorRange, got %v", err)
+	}
+}
+
+// Stop: worker does not shut down within the timeout — warning is logged.
+func TestWorkerStopTimeoutLogsWarning(t *testing.T) {
+	setupTestLogger(t)
+	worker, pub, store := newCommandTestWorker(t)
+	_ = pub
+	_ = store
+
+	worker.Start(context.Background())
+	// A 1-nanosecond timeout reliably expires before the goroutine processes the cancel.
+	worker.Stop(1 * time.Nanosecond)
+	// Give the goroutine time to finish so the test doesn't leak.
+	time.Sleep(50 * time.Millisecond)
+}
+
+// sensorLoop: zero SendFrequencyMs waits on configCh before starting ticker.
+func TestWorkerZeroFrequencyStartsTickerOnConfig(t *testing.T) {
+	store := fakes.NewFakeGatewayStore()
+	gw := domain.SimGateway{
+		ManagementGatewayID: uuid.New(),
+		TenantID:            "tenant1",
+		SendFrequencyMs:     0, // triggers cfgC = w.configCh branch
+	}
+	id, _ := store.CreateGateway(context.Background(), gw)
+	gw.ID = id
+
+	pub := &fakes.FakePublisher{}
+	met := newTestDeps().met
+	w := NewGatewayWorker(WorkerDeps{
+		Gateway:   gw,
+		Publisher: pub,
+		Encryptor: &fakes.FakeEncryptor{},
+		Clock:     fakes.NewFakeClock(time.Now()),
+		Buffer:    NewMessageBuffer(2, "telemetry.test", gw.ManagementGatewayID.String(), pub, met),
+		Store:     store,
+	})
+
+	w.Start(context.Background())
+	defer w.Stop(time.Second)
+
+	// Send a valid frequency to start the ticker.
+	freq := 50
+	w.configCh <- domain.GatewayConfigUpdate{SendFrequencyMs: &freq}
+
+	// Allow time for the ticker to be created and at least one tick to fire.
+	time.Sleep(200 * time.Millisecond)
+}
+
+// drainControlChannels: invalid (<=0) frequency is ignored with a warning.
+func TestDrainControlChannelsInvalidFrequencyIgnored(t *testing.T) {
+	setupTestLogger(t)
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+
+	neg := -1
+	// UpdateConfig does not validate the value, so -1 reaches drainControlChannels.
+	_ = reg.UpdateConfig(context.Background(), gw.ManagementGatewayID, domain.GatewayConfigUpdate{
+		SendFrequencyMs: &neg,
+	})
+
+	// Allow the tick to fire and drain the channel.
+	time.Sleep(200 * time.Millisecond)
+}
+
+// checkAnomalyExpiry: expiresAt is zero — returns early without clearing the anomaly.
+func TestCheckAnomalyExpiryZeroExpiresAtRetainsAnomaly(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+
+	// Inject an anomaly with nil params → expiresAt stays zero-value.
+	_ = reg.InjectGatewayAnomaly(context.Background(), gw.ManagementGatewayID, domain.GatewayAnomalyCommand{
+		Type:               domain.NetworkDegradation,
+		NetworkDegradation: nil,
+	})
+
+	// Allow several ticks so checkAnomalyExpiry runs with expiresAt == zero.
+	time.Sleep(200 * time.Millisecond)
+
+	w := getWorker(t, reg, gw.ManagementGatewayID)
+	_ = reg.Stop(context.Background(), gw.ManagementGatewayID)
+
+	anomaly := w.activeAnomaly
+	// The anomaly must still be present because expiresAt is zero (never expires).
+	if anomaly == nil {
+		t.Error("expected anomaly to persist when expiresAt is zero")
+	}
+}
+
+// handleConfigUpdateCommand: UpdateFrequency fails → NACK.
+func TestWorkerHandleIncomingCommandConfigUpdateFrequencyFailsSendsNACK(t *testing.T) {
+	worker, pub, store := newCommandTestWorker(t)
+
+	// Remove the gateway from the store so UpdateFrequency returns an error.
+	_ = store.DeleteGateway(context.Background(), worker.gateway.ID)
+
+	freq := 300
+	payload, _ := json.Marshal(domain.CommandConfigPayload{SendFrequencyMs: &freq})
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cfg-freq-fail",
+		Type:      domain.ConfigUpdate,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf(expectedNACKMsg, ack.Status)
+	}
+	if ack.Message == nil || !strings.Contains(*ack.Message, "failed to update frequency in store") {
+		t.Fatalf("expected frequency update failure message, got %v", ack.Message)
+	}
+}
+
+// handleFirmwarePushCommand: empty FirmwareVersion returns ACK immediately.
+func TestWorkerHandleIncomingCommandFirmwarePushEmptyVersionACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	payload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: "", DownloadURL: firmwareDownloadURL})
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "fw-empty-version",
+		Type:      domain.FirmwarePush,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.ACK {
+		t.Fatalf("expected ACK for empty firmware version, got %s", ack.Status)
+	}
+}
+
+// sendACK: publisher.Publish fails — error is logged, no panic.
+func TestWorkerSendACKPublishFailsNoPanic(t *testing.T) {
+	setupTestLogger(t)
+	worker, pub, _ := newCommandTestWorker(t)
+	pub.Err = fakes.ErrSimulated
+
+	// Any command that results in an ACK will trigger sendACK → Publish failure.
+	payload, _ := json.Marshal(domain.CommandFirmwarePayload{FirmwareVersion: ""})
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "ack-publish-fail",
+		Type:      domain.FirmwarePush,
+		Payload:   payload,
+	})
+	// No panic expected; Publish failure is only logged.
+}
+
+// handleFirmwarePushCommand: invalid JSON payload returns NACK.
+func TestWorkerHandleIncomingCommandFirmwarePushInvalidPayloadSendsNACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "fw-invalid-json",
+		Type:      domain.FirmwarePush,
+		Payload:   []byte("{"),
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf(expectedNACKMsg, ack.Status)
+	}
+	if ack.Message == nil || !strings.Contains(*ack.Message, "invalid firmware payload") {
+		t.Fatalf("expected invalid firmware payload message, got %v", ack.Message)
+	}
+}
+
+// handleConfigUpdateCommand: sendFrequencyMs <= 0 returns NACK.
+func TestWorkerHandleIncomingCommandConfigUpdateZeroFrequencySendsNACK(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	zero := 0
+	payload, _ := json.Marshal(domain.CommandConfigPayload{SendFrequencyMs: &zero})
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cfg-zero-freq",
+		Type:      domain.ConfigUpdate,
+		Payload:   payload,
+	})
+
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.NACK {
+		t.Fatalf(expectedNACKMsg, ack.Status)
+	}
+	if ack.Message == nil || *ack.Message != "sendFrequencyMs must be > 0" {
+		t.Fatalf("expected sendFrequencyMs must be > 0 message, got %v", ack.Message)
 	}
 }

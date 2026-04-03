@@ -7,7 +7,7 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/adapters"
 )
 
-func TestSystemClock_Now_IsWithinCallWindow(t *testing.T) {
+func TestSystemClockNowIsWithinCallWindow(t *testing.T) {
 	c := adapters.SystemClock{}
 	before := time.Now()
 	now := c.Now()

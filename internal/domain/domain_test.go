@@ -56,9 +56,9 @@ func TestEncryptionKey_Bytes_ReturnsCopy(t *testing.T) {
 func TestGatewayStatus_Values_Distinct(t *testing.T) {
 	statuses := []domain.GatewayStatus{
 		domain.Provisioning,
-		domain.Running,
-		domain.Stopped,
-		domain.Decommissioned,
+		domain.Online,
+		domain.Offline,
+		domain.Paused,
 	}
 	seen := map[domain.GatewayStatus]bool{}
 	for _, s := range statuses {
@@ -134,13 +134,9 @@ func TestTelemetryEnvelope_ZeroValue_NoPanic(t *testing.T) {
 
 func TestCreateGatewayRequest_Fields(t *testing.T) {
 	r := domain.CreateGatewayRequest{
-		TenantID:        "t1",
 		FactoryID:       "fid",
 		FactoryKey:      "fkey",
 		SendFrequencyMs: 1000,
-	}
-	if r.TenantID != "t1" {
-		t.Error("TenantID not set")
 	}
 	if r.FactoryID != "fid" {
 		t.Error("FactoryID not set")

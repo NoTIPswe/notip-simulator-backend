@@ -16,6 +16,16 @@
 		}
 	},
 
+	"features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {},
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
+            "version": "latest",
+            "moby": false,
+            "installDockerBuildx": true,
+            "dockerDashComposeVersion": "v2"
+        }
+    },
+
 	"forwardPorts": [8080],
 
 	"workspaceFolder": "/workspaces/notip-simulator-backend",

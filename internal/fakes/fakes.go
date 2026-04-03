@@ -147,12 +147,12 @@ type FakeConnector struct {
 	Err          error
 }
 
-func (c *FakeConnector) Connect(_ context.Context, _ []byte, _ []byte, _ string, _ uuid.UUID) (ports.GatewayPublisher, ports.CommandSubscription, error) {
+func (c *FakeConnector) Connect(_ context.Context, _ []byte, _ []byte, _ string, _ uuid.UUID) (ports.GatewayPublisher, ports.CommandSubscription, func() error, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.Err != nil {
-		return nil, nil, c.Err
+		return nil, nil, nil, c.Err
 	}
 	if c.Publisher == nil {
 		c.Publisher = &FakePublisher{}
@@ -160,7 +160,8 @@ func (c *FakeConnector) Connect(_ context.Context, _ []byte, _ []byte, _ string,
 	if c.Subscription == nil {
 		c.Subscription = NewFakeCommandSubscription()
 	}
-	return c.Publisher, c.Subscription, nil
+	closeNC := func() error { return nil }
+	return c.Publisher, c.Subscription, closeNC, nil
 }
 
 //Provisioning Client.
@@ -170,8 +171,15 @@ type FakeProvisioningClient struct {
 	Err    error
 }
 
-func (p *FakeProvisioningClient) Onboard(_ context.Context, _, _, _ string, _ uuid.UUID) (domain.ProvisionResult, error) {
-	return p.Result, p.Err
+func (p *FakeProvisioningClient) Onboard(_ context.Context, _, _ string, _ int, _ string) (domain.ProvisionResult, error) {
+	if p.Err != nil {
+		return domain.ProvisionResult{}, p.Err
+	}
+	result := p.Result
+	if result.GatewayID == "" {
+		result.GatewayID = uuid.NewString()
+	}
+	return result, nil
 }
 
 // GatewayStore.
@@ -246,7 +254,7 @@ func (s *FakeGatewayStore) GetGatewayByManagementID(_ context.Context, managemen
 			return &cp, nil
 		}
 	}
-	return nil, fmt.Errorf("gateway with mgmt ID %s not found", managementID)
+	return nil, domain.ErrGatewayNotFound
 }
 
 func (s *FakeGatewayStore) ListGateways(_ context.Context) ([]*domain.SimGateway, error) {
@@ -408,7 +416,7 @@ type FakeGatewayLifecycleService struct {
 	BulkCreateGatewaysFn func(ctx context.Context, req domain.BulkCreateRequest) ([]*domain.SimGateway, []error)
 	StartFn              func(ctx context.Context, managementID uuid.UUID) error
 	StopFn               func(ctx context.Context, managementID uuid.UUID) error
-	DecommissionFn       func(ctx context.Context, managementID uuid.UUID) error
+	DeleteFn             func(ctx context.Context, managementID uuid.UUID) error
 	ListGatewaysFn       func(ctx context.Context) ([]*domain.SimGateway, error)
 	GetGatewayFn         func(ctx context.Context, managementID uuid.UUID) (*domain.SimGateway, error)
 }
@@ -441,9 +449,9 @@ func (f *FakeGatewayLifecycleService) Stop(ctx context.Context, managementID uui
 	return nil
 }
 
-func (f *FakeGatewayLifecycleService) Decommission(ctx context.Context, managementID uuid.UUID) error {
-	if f.DecommissionFn != nil {
-		return f.DecommissionFn(ctx, managementID)
+func (f *FakeGatewayLifecycleService) Delete(ctx context.Context, managementID uuid.UUID) error {
+	if f.DeleteFn != nil {
+		return f.DeleteFn(ctx, managementID)
 	}
 	return nil
 }

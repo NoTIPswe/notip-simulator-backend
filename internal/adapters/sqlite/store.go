@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -32,7 +33,7 @@ type SQLiteGatewayStore struct {
 }
 
 func NewStore(path string) (*SQLiteGatewayStore, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -64,28 +65,43 @@ func (s *SQLiteGatewayStore) RunMigrations(ctx context.Context) error {
 		if entry.IsDir() {
 			continue
 		}
-		version := entry.Name()
-
-		var count int
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, version).Scan(&count); err != nil {
-			return fmt.Errorf("check migration %s: %w", version, err)
+		if err := s.applyMigration(ctx, entry.Name()); err != nil {
+			return err
 		}
-		if count > 0 {
-			continue
-		}
-
-		data, err := migrations.FS.ReadFile(version)
-		if err != nil {
-			return fmt.Errorf("read migration file %s: %w", version, err)
-		}
-		if _, err := s.db.ExecContext(ctx, string(data)); err != nil { // NOSONAR - query is read from trusted embedded FS, not user input
-			return fmt.Errorf("execute migration %s: %w", version, err)
-		}
-		if _, err := s.db.ExecContext(ctx, `INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
-			return fmt.Errorf("record migration %s: %w", version, err)
-		}
-		slog.Info("Applied migration", "version", version)
 	}
+	return nil
+}
+
+func (s *SQLiteGatewayStore) applyMigration(ctx context.Context, version string) error {
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, version).Scan(&count); err != nil {
+		return fmt.Errorf("check migration %s: %w", version, err)
+	}
+	if count > 0 {
+		return nil
+	}
+
+	data, err := migrations.FS.ReadFile(version)
+	if err != nil {
+		return fmt.Errorf("read migration file %s: %w", version, err)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction for %s: %w", version, err)
+	}
+	if _, err := tx.ExecContext(ctx, string(data)); err != nil { // NOSONAR - query is read from trusted embedded FS, not user input
+		_ = tx.Rollback()
+		return fmt.Errorf("execute migration %s: %w", version, err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("record migration %s: %w", version, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration %s: %w", version, err)
+	}
+	slog.Info("Applied migration", "version", version)
 	return nil
 }
 
@@ -345,6 +361,9 @@ func scanGateway(s scanner) (*domain.SimGateway, error) {
 		&createdAt,
 	)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrGatewayNotFound
+		}
 		return nil, fmt.Errorf("scan gateway: %w", err)
 	}
 
@@ -353,9 +372,11 @@ func scanGateway(s scanner) (*domain.SimGateway, error) {
 		return nil, fmt.Errorf("parse management_gateway_id: %w", err)
 	}
 
-	gw.EncryptionKey, err = domain.NewEncryptionKey(encKeyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("parse encryption_key: %w", err)
+	if len(encKeyBytes) > 0 {
+		gw.EncryptionKey, err = domain.NewEncryptionKey(encKeyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("parse encryption_key: %w", err)
+		}
 	}
 
 	gw.Provisioned = provisioned == 1
@@ -385,6 +406,9 @@ func scanSensor(s scanner) (*domain.SimSensor, error) {
 		&createdAt,
 	)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrSensorNotFound
+		}
 		return nil, fmt.Errorf("scan sensor: %w", err)
 	}
 
