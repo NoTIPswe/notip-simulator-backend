@@ -143,6 +143,76 @@ func TestSetupDecommissionListenerConnectFails(t *testing.T) {
 	}
 }
 
+func TestSetupDecommissionListenerReadClientCertFails(t *testing.T) {
+	caPath := writeTempCACert(t)
+
+	cfg := &config.Config{
+		NATSCACertPath:  caPath,
+		NATSUrl:         testLocalNATSURL,
+		NATSTLSCertPath: testMissingCACert,
+		NATSTLSKeyPath:  testMissingCACert,
+	}
+
+	_, err := setupDecommissionListener(context.Background(), cfg, newTestRegistry(newTestDeps()))
+	if err == nil {
+		t.Fatal("expected read client cert failure")
+	}
+	if !strings.Contains(err.Error(), "read nats client cert") {
+		t.Fatalf(msgUnexpectedError, err)
+	}
+}
+
+func TestSetupDecommissionListenerReadClientKeyFails(t *testing.T) {
+	caPath := writeTempCACert(t)
+	certPath := filepath.Join(t.TempDir(), "client.crt")
+	if err := os.WriteFile(certPath, []byte("cert"), 0o600); err != nil {
+		t.Fatalf("write temp cert file: %v", err)
+	}
+
+	cfg := &config.Config{
+		NATSCACertPath:  caPath,
+		NATSUrl:         testLocalNATSURL,
+		NATSTLSCertPath: certPath,
+		NATSTLSKeyPath:  testMissingCACert,
+	}
+
+	_, err := setupDecommissionListener(context.Background(), cfg, newTestRegistry(newTestDeps()))
+	if err == nil {
+		t.Fatal("expected read client key failure")
+	}
+	if !strings.Contains(err.Error(), "read nats client key") {
+		t.Fatalf(msgUnexpectedError, err)
+	}
+}
+
+func TestSetupDecommissionListenerParseClientCertKeyFails(t *testing.T) {
+	caPath := writeTempCACert(t)
+	tmpDir := t.TempDir()
+	certPath := filepath.Join(tmpDir, "client.crt")
+	keyPath := filepath.Join(tmpDir, "client.key")
+	if err := os.WriteFile(certPath, []byte("bad-cert"), 0o600); err != nil {
+		t.Fatalf("write temp cert file: %v", err)
+	}
+	if err := os.WriteFile(keyPath, []byte("bad-key"), 0o600); err != nil {
+		t.Fatalf("write temp key file: %v", err)
+	}
+
+	cfg := &config.Config{
+		NATSCACertPath:  caPath,
+		NATSUrl:         testLocalNATSURL,
+		NATSTLSCertPath: certPath,
+		NATSTLSKeyPath:  keyPath,
+	}
+
+	_, err := setupDecommissionListener(context.Background(), cfg, newTestRegistry(newTestDeps()))
+	if err == nil {
+		t.Fatal("expected parse client cert/key failure")
+	}
+	if !strings.Contains(err.Error(), "parse nats client cert/key") {
+		t.Fatalf(msgUnexpectedError, err)
+	}
+}
+
 func TestStartMetricsServerInvalidAddrSendsError(t *testing.T) {
 	errCh := make(chan error, 1)
 	srv := startMetricsServer("bad-addr", errCh)

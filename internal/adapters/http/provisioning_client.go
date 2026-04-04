@@ -3,9 +3,8 @@ package http
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -100,7 +99,7 @@ func (c *ProvisioningServiceClient) Onboard(
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return domain.ProvisionResult{}, fmt.Errorf("onboard request failed with status: %d", resp.StatusCode)
 	}
 
@@ -130,18 +129,14 @@ func (c *ProvisioningServiceClient) Onboard(
 }
 
 func (c *ProvisioningServiceClient) generateKeypairAndCSR() (keyPEM, csrPEM []byte, err error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return nil, nil, fmt.Errorf("generate ECDSA key: %w", err)
+		return nil, nil, fmt.Errorf("generate RSA key: %w", err)
 	}
 
-	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal EC private key: %w", err)
-	}
 	keyPEM = pem.EncodeToMemory(&pem.Block{
-		Type:  "EC PRIVATE KEY",
-		Bytes: keyBytes,
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	})
 
 	// Subject is intentionally empty — identity is embedded by the provisioning service when signing

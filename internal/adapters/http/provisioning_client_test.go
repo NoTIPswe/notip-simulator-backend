@@ -146,3 +146,26 @@ func TestProvisioningClientOnboardInvalidBase64Key(t *testing.T) {
 		t.Error("expected error for invalid base64, got nil")
 	}
 }
+
+func TestProvisioningClientOnboardCreatedAccepted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"certPem": "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----",
+			"aesKey":  makeValidAESKey(),
+			"identity": map[string]string{
+				"gatewayId": testGatewayID,
+				"tenantId":  testTenantID,
+			},
+			"sendFrequencyMs": 100,
+		})
+	}))
+	defer srv.Close()
+
+	client := simhttp.NewProvisioningServiceClient(srv.URL)
+	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, testFWVersion)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

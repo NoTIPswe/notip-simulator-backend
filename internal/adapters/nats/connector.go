@@ -15,14 +15,16 @@ import (
 )
 
 type NATSMTLSConnector struct {
-	natsURL string
-	caPool  *x509.CertPool
-	clock   ports.Nower
+	natsURL       string
+	caPool        *x509.CertPool
+	staticCert    *tls.Certificate
+	useStaticMTLS bool
+	clock         ports.Nower
 }
 
 // NewNATSMTLSConnector reads and parses the CA certificate once at construction time.
 // Subsequent Connect calls reuse the cached pool — no disk I/O per connection.
-func NewNATSMTLSConnector(natsURL, caCertPath string, clock ports.Nower) (*NATSMTLSConnector, error) {
+func NewNATSMTLSConnector(natsURL, caCertPath, staticCertPath, staticKeyPath string, clock ports.Nower) (*NATSMTLSConnector, error) {
 	caCert, err := os.ReadFile(caCertPath)
 	if err != nil {
 		return nil, fmt.Errorf("read CA certificate: %w", err)
@@ -33,10 +35,30 @@ func NewNATSMTLSConnector(natsURL, caCertPath string, clock ports.Nower) (*NATSM
 		return nil, fmt.Errorf("failed to parse CA certificate")
 	}
 
+	var parsedStaticCert *tls.Certificate
+	useStaticMTLS := staticCertPath != "" && staticKeyPath != ""
+	if useStaticMTLS {
+		certPEM, err := os.ReadFile(staticCertPath)
+		if err != nil {
+			return nil, fmt.Errorf("read static client certificate: %w", err)
+		}
+		keyPEM, err := os.ReadFile(staticKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("read static client key: %w", err)
+		}
+		cert, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("parse static client certificate/key: %w", err)
+		}
+		parsedStaticCert = &cert
+	}
+
 	return &NATSMTLSConnector{
-		natsURL: natsURL,
-		caPool:  caPool,
-		clock:   clock,
+		natsURL:       natsURL,
+		caPool:        caPool,
+		staticCert:    parsedStaticCert,
+		useStaticMTLS: useStaticMTLS,
+		clock:         clock,
 	}, nil
 }
 
@@ -100,9 +122,18 @@ func (c *NATSMTLSConnector) Connect(ctx context.Context, certPEM []byte, keyPEM 
 
 // buildTLSConfig constructs a mutual TLS config using the cached CA pool.
 func (c *NATSMTLSConnector) buildTLSConfig(certPEM, keyPEM []byte) (*tls.Config, error) {
-	cert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		return nil, fmt.Errorf("parse client certificate/key: %w", err)
+	var cert tls.Certificate
+	if c.useStaticMTLS {
+		if c.staticCert == nil {
+			return nil, fmt.Errorf("static client certificate is enabled but not loaded")
+		}
+		cert = *c.staticCert
+	} else {
+		parsed, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("parse client certificate/key: %w", err)
+		}
+		cert = parsed
 	}
 
 	return &tls.Config{

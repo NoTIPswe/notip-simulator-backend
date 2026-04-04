@@ -89,6 +89,28 @@ func TestLoadMissingCACertPathReturnsError(t *testing.T) {
 	}
 }
 
+func TestLoadTLSClientCertWithoutKeyReturnsError(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("NATS_TLS_CERT", "/certs/client.pem")
+	_ = os.Unsetenv("NATS_TLS_KEY")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error when NATS_TLS_CERT is set without NATS_TLS_KEY")
+	}
+}
+
+func TestLoadTLSClientKeyWithoutCertReturnsError(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("NATS_TLS_KEY", "/certs/client.key")
+	_ = os.Unsetenv("NATS_TLS_CERT")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error when NATS_TLS_KEY is set without NATS_TLS_CERT")
+	}
+}
+
 func TestLoadRecoveryModeDefaultFalse(t *testing.T) {
 	requiredEnv(t)
 	cfg, err := config.Load()
