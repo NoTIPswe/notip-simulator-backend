@@ -3,7 +3,6 @@ package http
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/ports"
@@ -90,7 +89,7 @@ func (h *AnomalyHandler) InjectDisconnect(w http.ResponseWriter, r *http.Request
 }
 
 func (h *AnomalyHandler) InjectOutlier(w http.ResponseWriter, r *http.Request) {
-	sensorID, err := strconv.ParseInt(r.PathValue("sensorId"), 10, 64)
+	sensorID, err := uuid.Parse(r.PathValue("sensorId"))
 	if err != nil {
 		http.Error(w, "invalid sensor ID format", http.StatusBadRequest)
 		return

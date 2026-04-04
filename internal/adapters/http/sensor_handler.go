@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"strconv"
+
+	"github.com/google/uuid"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/adapters/http/dto"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/ports"
@@ -21,9 +22,9 @@ func NewSensorHandler(sensors ports.SensorManagementService) *SensorHandler {
 }
 
 func (h *SensorHandler) Add(w http.ResponseWriter, r *http.Request) {
-	gwID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	gwID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "invalid gateway ID format", http.StatusBadRequest)
+		http.Error(w, invalidGatewayIDFormat, http.StatusBadRequest)
 		return
 	}
 
@@ -48,9 +49,9 @@ func (h *SensorHandler) Add(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
-	gwID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	gwID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "invalid gateway ID format", http.StatusBadRequest)
+		http.Error(w, invalidGatewayIDFormat, http.StatusBadRequest)
 		return
 	}
 
@@ -67,7 +68,7 @@ func (h *SensorHandler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SensorHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	sensorID, err := strconv.ParseInt(r.PathValue("sensorId"), 10, 64)
+	sensorID, err := uuid.Parse(r.PathValue("sensorId"))
 	if err != nil {
 		http.Error(w, "invalid sensor ID format", http.StatusBadRequest)
 		return

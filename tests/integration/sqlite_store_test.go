@@ -30,7 +30,6 @@ func TestSQLiteStoreCreateAndGetGateway(t *testing.T) {
 		ManagementGatewayID: uuid.New(),
 		FactoryID:           "factory-1",
 		FactoryKey:          "key-1",
-		SerialNumber:        "SN-001",
 		Model:               "ModelX",
 		FirmwareVersion:     "1.0.0",
 		SendFrequencyMs:     1000,
@@ -475,9 +474,9 @@ func TestSQLiteStoreScanGatewayInvalidUUIDReturnsError(t *testing.T) {
 	res, err := rawDB.ExecContext(ctx, `
 		INSERT INTO gateways (
 			management_gateway_id, factory_id, factory_key,
-			serial_number, model, firmware_version,
+			model, firmware_version,
 			provisioned, send_frequency_ms, status, tenant_id, created_at
-		) VALUES ('not-a-valid-uuid', '', '', '', '', '', 0, 1000, 'provisioning', 'tenant-1', CURRENT_TIMESTAMP)
+		) VALUES ('not-a-valid-uuid', '', '', '', '', 0, 1000, 'provisioning', 'tenant-1', CURRENT_TIMESTAMP)
 	`)
 	require.NoError(t, err)
 

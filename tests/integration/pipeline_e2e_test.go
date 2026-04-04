@@ -139,7 +139,6 @@ func TestE2ECreateGatewayTelemetryArrivesOnNATS(t *testing.T) {
 	gw, err := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
 		FactoryID:       "f1",
 		FactoryKey:      "k1",
-		SerialNumber:    "SN-E2E",
 		Model:           "ModelE2E",
 		FirmwareVersion: "1.0.0",
 		SendFrequencyMs: 50,
@@ -148,7 +147,7 @@ func TestE2ECreateGatewayTelemetryArrivesOnNATS(t *testing.T) {
 	require.NotNil(t, gw)
 
 	// Add a temperature sensor with a deterministic generator.
-	sensor, err := e.registry.AddSensor(ctx, gw.ID, domain.SimSensor{
+	sensor, err := e.registry.AddSensor(ctx, gw.ManagementGatewayID, domain.SimSensor{
 		Type:      domain.Temperature,
 		MinRange:  20,
 		MaxRange:  30,
@@ -191,7 +190,7 @@ func TestE2EStopGatewayStopsPublishing(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = e.registry.AddSensor(ctx, gw.ID, domain.SimSensor{
+	_, err = e.registry.AddSensor(ctx, gw.ManagementGatewayID, domain.SimSensor{
 		Type: domain.Temperature, MinRange: 0, MaxRange: 50, Algorithm: domain.Constant,
 	})
 	require.NoError(t, err)
@@ -353,7 +352,7 @@ func TestE2EDisconnectAnomalyTelemetryResumesAfterExpiry(t *testing.T) {
 	gw, _ := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
 		FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
 	})
-	_, _ = e.registry.AddSensor(ctx, gw.ID, domain.SimSensor{
+	_, _ = e.registry.AddSensor(ctx, gw.ManagementGatewayID, domain.SimSensor{
 		Type: domain.Temperature, MinRange: 0, MaxRange: 50, Algorithm: domain.Constant,
 	})
 
@@ -397,7 +396,7 @@ func TestE2ENetworkDegradation100PctLossStopsTelemetry(t *testing.T) {
 	gw, _ := e.registry.CreateAndStart(ctx, domain.CreateGatewayRequest{
 		FactoryID: "f", FactoryKey: "k", SendFrequencyMs: 50,
 	})
-	_, _ = e.registry.AddSensor(ctx, gw.ID, domain.SimSensor{
+	_, _ = e.registry.AddSensor(ctx, gw.ManagementGatewayID, domain.SimSensor{
 		Type: domain.Temperature, MinRange: 0, MaxRange: 50, Algorithm: domain.Constant,
 	})
 
@@ -448,7 +447,7 @@ func TestE2EOutlierInjectionTelemetryPublished(t *testing.T) {
 	require.NoError(t, err)
 
 	// Sensor with range [20, 30] — outlier will be 500.0, way out of range.
-	sensor, err := e.registry.AddSensor(ctx, gw.ID, domain.SimSensor{
+	sensor, err := e.registry.AddSensor(ctx, gw.ManagementGatewayID, domain.SimSensor{
 		Type:      domain.Temperature,
 		MinRange:  20,
 		MaxRange:  30,
@@ -471,7 +470,7 @@ func TestE2EOutlierInjectionTelemetryPublished(t *testing.T) {
 
 	// Inject out of range value.
 	outlierVal := 500.0
-	require.NoError(t, e.registry.InjectSensorOutlier(ctx, sensor.ID, &outlierVal))
+	require.NoError(t, e.registry.InjectSensorOutlier(ctx, sensor.SensorID, &outlierVal))
 
 	// Drain the channel to isolate post-injection messages.
 	for len(msgCh) > 0 {

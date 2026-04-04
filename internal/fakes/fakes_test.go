@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestFakeClock_NowAndAdvance(t *testing.T) {
+func TestFakeClockNowAndAdvance(t *testing.T) {
 	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	c := NewFakeClock(start)
 
@@ -23,7 +23,7 @@ func TestFakeClock_NowAndAdvance(t *testing.T) {
 	}
 }
 
-func TestFakeEncryptor_Encrypt(t *testing.T) {
+func TestFakeEncryptorEncrypt(t *testing.T) {
 	e := &FakeEncryptor{}
 	payload, err := e.Encrypt(domain.EncryptionKey{}, []byte("x"))
 	if err != nil {
@@ -39,7 +39,7 @@ func TestFakeEncryptor_Encrypt(t *testing.T) {
 	}
 }
 
-func TestFakePublisher_Behavior(t *testing.T) {
+func TestFakePublisherBehavior(t *testing.T) {
 	p := &FakePublisher{}
 	if err := p.Publish(context.Background(), "s", []byte("p")); err != nil {
 		t.Fatalf("publish failed: %v", err)
@@ -73,7 +73,7 @@ func TestFakePublisher_Behavior(t *testing.T) {
 	}
 }
 
-func TestFakeCommandSubscription_Behavior(t *testing.T) {
+func TestFakeCommandSubscriptionBehavior(t *testing.T) {
 	s := NewFakeCommandSubscription()
 	if s.Messages() == nil {
 		t.Fatal("expected non-nil messages channel")
@@ -86,7 +86,7 @@ func TestFakeCommandSubscription_Behavior(t *testing.T) {
 	}
 }
 
-func TestFakeConnector_Connect(t *testing.T) {
+func TestFakeConnectorConnect(t *testing.T) {
 	c := &FakeConnector{}
 	pub, sub, closeNC, err := c.Connect(context.Background(), nil, nil, "t", uuid.New())
 	if err != nil {
@@ -119,7 +119,7 @@ func TestFakeProvisioningClientOnboard(t *testing.T) {
 	}
 }
 
-func TestFakeGatewayStore_GatewayCRUDAndUpdates(t *testing.T) {
+func TestFakeGatewayStoreGatewayCRUDAndUpdates(t *testing.T) {
 	s := NewFakeGatewayStore()
 	mgmtID := uuid.New()
 	gw := domain.SimGateway{ManagementGatewayID: mgmtID, FirmwareVersion: "1.0.0"}
@@ -164,7 +164,7 @@ func TestFakeGatewayStore_GatewayCRUDAndUpdates(t *testing.T) {
 	}
 }
 
-func TestFakeGatewayStore_SensorCRUD(t *testing.T) {
+func TestFakeGatewayStoreSensorCRUD(t *testing.T) {
 	s := NewFakeGatewayStore()
 	gwID, _ := s.CreateGateway(context.Background(), domain.SimGateway{ManagementGatewayID: uuid.New()})
 
@@ -188,7 +188,7 @@ func TestFakeGatewayStore_SensorCRUD(t *testing.T) {
 	}
 }
 
-func TestFakeGatewayStore_ErrorPaths(t *testing.T) {
+func TestFakeGatewayStoreErrorPaths(t *testing.T) {
 	s := NewFakeGatewayStore()
 	s.ErrCreateGateway = ErrSimulated
 	if _, err := s.CreateGateway(context.Background(), domain.SimGateway{}); err == nil {
@@ -227,7 +227,7 @@ func TestFakeGatewayStore_ErrorPaths(t *testing.T) {
 	}
 }
 
-func TestFakeGenerator_Behavior(t *testing.T) {
+func TestFakeGeneratorBehavior(t *testing.T) {
 	g := &FakeGenerator{NextValue: 7.5}
 	if got := g.Next(); got != 7.5 {
 		t.Fatalf("expected 7.5, got %v", got)
@@ -241,7 +241,7 @@ func TestFakeGenerator_Behavior(t *testing.T) {
 	}
 }
 
-func TestFakeGatewayLifecycleService_DefaultsAndCallbacks(t *testing.T) {
+func TestFakeGatewayLifecycleServiceDefaultsAndCallbacks(t *testing.T) {
 	svc := &FakeGatewayLifecycleService{}
 	if _, err := svc.CreateAndStart(context.Background(), domain.CreateGatewayRequest{}); err != nil {
 		t.Fatalf("default CreateAndStart should not error: %v", err)
@@ -273,30 +273,30 @@ func TestFakeGatewayLifecycleService_DefaultsAndCallbacks(t *testing.T) {
 	}
 }
 
-func TestFakeSensorManagementService_DefaultsAndCallbacks(t *testing.T) {
+func TestFakeSensorManagementServiceDefaultsAndCallbacks(t *testing.T) {
 	svc := &FakeSensorManagementService{}
-	if _, err := svc.AddSensor(context.Background(), 1, domain.SimSensor{}); err != nil {
+	if _, err := svc.AddSensor(context.Background(), uuid.New(), domain.SimSensor{}); err != nil {
 		t.Fatalf("default AddSensor should not error: %v", err)
 	}
-	if _, err := svc.ListSensors(context.Background(), 1); err != nil {
+	if _, err := svc.ListSensors(context.Background(), uuid.New()); err != nil {
 		t.Fatalf("default ListSensors should not error: %v", err)
 	}
-	if err := svc.DeleteSensor(context.Background(), 1); err != nil {
+	if err := svc.DeleteSensor(context.Background(), uuid.New()); err != nil {
 		t.Fatalf("default DeleteSensor should not error: %v", err)
 	}
 
 	called := false
-	svc.DeleteSensorFn = func(context.Context, int64) error {
+	svc.DeleteSensorFn = func(context.Context, uuid.UUID) error {
 		called = true
 		return nil
 	}
-	_ = svc.DeleteSensor(context.Background(), 1)
+	_ = svc.DeleteSensor(context.Background(), uuid.New())
 	if !called {
 		t.Fatal("expected callback DeleteSensorFn to be called")
 	}
 }
 
-func TestFakeSimulatorControlService_DefaultsAndCallbacks(t *testing.T) {
+func TestFakeSimulatorControlServiceDefaultsAndCallbacks(t *testing.T) {
 	svc := &FakeSimulatorControlService{}
 	if err := svc.UpdateConfig(context.Background(), uuid.New(), domain.GatewayConfigUpdate{}); err != nil {
 		t.Fatalf("default UpdateConfig should not error: %v", err)
@@ -304,22 +304,22 @@ func TestFakeSimulatorControlService_DefaultsAndCallbacks(t *testing.T) {
 	if err := svc.InjectGatewayAnomaly(context.Background(), uuid.New(), domain.GatewayAnomalyCommand{}); err != nil {
 		t.Fatalf("default InjectGatewayAnomaly should not error: %v", err)
 	}
-	if err := svc.InjectSensorOutlier(context.Background(), 1, nil); err != nil {
+	if err := svc.InjectSensorOutlier(context.Background(), uuid.New(), nil); err != nil {
 		t.Fatalf("default InjectSensorOutlier should not error: %v", err)
 	}
 
 	called := false
-	svc.InjectSensorOutlierFn = func(context.Context, int64, *float64) error {
+	svc.InjectSensorOutlierFn = func(context.Context, uuid.UUID, *float64) error {
 		called = true
 		return nil
 	}
-	_ = svc.InjectSensorOutlier(context.Background(), 1, nil)
+	_ = svc.InjectSensorOutlier(context.Background(), uuid.New(), nil)
 	if !called {
 		t.Fatal("expected callback InjectSensorOutlierFn to be called")
 	}
 }
 
-func TestFakeDecommissionEventReceiver_CollectsCalls(t *testing.T) {
+func TestFakeDecommissionEventReceiverCollectsCalls(t *testing.T) {
 	r := &FakeDecommissionEventReceiver{}
 	r.HandleDecommission("tenant", "gateway")
 	if len(r.Calls) != 1 {

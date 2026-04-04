@@ -22,9 +22,9 @@ type GatewayLifecycleService interface {
 // SensorManagementService handles sensor CRUD on a running gateway worker.
 // Called by SensorHandler.
 type SensorManagementService interface {
-	AddSensor(ctx context.Context, gatewayID int64, sensor domain.SimSensor) (*domain.SimSensor, error)
-	ListSensors(ctx context.Context, gatewayID int64) ([]*domain.SimSensor, error)
-	DeleteSensor(ctx context.Context, sensorID int64) error
+	AddSensor(ctx context.Context, managementGatewayID uuid.UUID, sensor domain.SimSensor) (*domain.SimSensor, error)
+	ListSensors(ctx context.Context, managementGatewayID uuid.UUID) ([]*domain.SimSensor, error)
+	DeleteSensor(ctx context.Context, sensorID uuid.UUID) error
 }
 
 // SimulatorControlService handles live config updates and anomaly injection.
@@ -32,8 +32,7 @@ type SensorManagementService interface {
 type SimulatorControlService interface {
 	UpdateConfig(ctx context.Context, managementID uuid.UUID, update domain.GatewayConfigUpdate) error
 	InjectGatewayAnomaly(ctx context.Context, managementID uuid.UUID, cmd domain.GatewayAnomalyCommand) error
-	// InjectSensorOutlier resolves sensor→gateway internally; the adapter only provides the store ID.
-	InjectSensorOutlier(ctx context.Context, sensorID int64, value *float64) error
+	InjectSensorOutlier(ctx context.Context, sensorID uuid.UUID, value *float64) error
 }
 
 type DecommissionEventReceiver interface {

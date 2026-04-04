@@ -16,15 +16,16 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/migrations"
 )
 
-const getGatewayByIDQuery = `SELECT id, management_gateway_id, factory_id, factory_key, serial_number, model, firmware_version, provisioned, cert_pem, private_key_pem, encryption_key, send_frequency_ms, status, tenant_id, created_at FROM gateways WHERE id = ?`
+const getGatewayByIDQuery = `SELECT id, management_gateway_id, factory_id, factory_key, model, firmware_version, provisioned, cert_pem, private_key_pem, encryption_key, send_frequency_ms, status, tenant_id, created_at FROM gateways WHERE id = ?`
 
-const getGatewayByManagementIDQuery = `SELECT id, management_gateway_id, factory_id, factory_key, serial_number, model, firmware_version, provisioned, cert_pem, private_key_pem, encryption_key, send_frequency_ms, status, tenant_id, created_at FROM gateways WHERE management_gateway_id = ?`
+const getGatewayByManagementIDQuery = `SELECT id, management_gateway_id, factory_id, factory_key, model, firmware_version, provisioned, cert_pem, private_key_pem, encryption_key, send_frequency_ms, status, tenant_id, created_at FROM gateways WHERE management_gateway_id = ?`
 
-const listGatewaysQuery = `SELECT id, management_gateway_id, factory_id, factory_key, serial_number, model, firmware_version, provisioned, cert_pem, private_key_pem, encryption_key, send_frequency_ms, status, tenant_id, created_at FROM gateways`
+const listGatewaysQuery = `SELECT id, management_gateway_id, factory_id, factory_key, model, firmware_version, provisioned, cert_pem, private_key_pem, encryption_key, send_frequency_ms, status, tenant_id, created_at FROM gateways`
 
 const listSensorsByGatewayIDQuery = `SELECT id, gateway_id, sensor_id, type, min_range, max_range, algorithm, created_at FROM sensors WHERE gateway_id = ?`
 
 const getSensorByIDQuery = `SELECT id, gateway_id, sensor_id, type, min_range, max_range, algorithm, created_at FROM sensors WHERE id = ?`
+const getSensorBySensorIDQuery = `SELECT id, gateway_id, sensor_id, type, min_range, max_range, algorithm, created_at FROM sensors WHERE sensor_id = ?`
 const gatewayNotFoundFormat = "gateway with ID %d not found"
 
 type SQLiteGatewayStore struct {
@@ -118,14 +119,13 @@ func (s *SQLiteGatewayStore) CreateGateway(ctx context.Context, gw domain.SimGat
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO gateways (
 			management_gateway_id, factory_id, factory_key,
-			serial_number, model, firmware_version,
+			model, firmware_version,
 			provisioned, cert_pem, private_key_pem, encryption_key,
 			send_frequency_ms, status, tenant_id, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		gw.ManagementGatewayID.String(),
 		gw.FactoryID,
 		gw.FactoryKey,
-		gw.SerialNumber,
 		gw.Model,
 		gw.FirmwareVersion,
 		boolToInt(gw.Provisioned),
@@ -327,6 +327,11 @@ func (s *SQLiteGatewayStore) GetSensor(ctx context.Context, id int64) (*domain.S
 	return scanSensor(row)
 }
 
+func (s *SQLiteGatewayStore) GetSensorBySensorID(ctx context.Context, sensorID uuid.UUID) (*domain.SimSensor, error) {
+	row := s.db.QueryRowContext(ctx, getSensorBySensorIDQuery, sensorID.String())
+	return scanSensor(row)
+}
+
 // --- Helper functions ---
 
 type scanner interface {
@@ -348,7 +353,6 @@ func scanGateway(s scanner) (*domain.SimGateway, error) {
 		&managementID,
 		&gw.FactoryID,
 		&gw.FactoryKey,
-		&gw.SerialNumber,
 		&gw.Model,
 		&gw.FirmwareVersion,
 		&provisioned,

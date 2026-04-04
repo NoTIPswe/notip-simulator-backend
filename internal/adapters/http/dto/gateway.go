@@ -9,33 +9,30 @@ import (
 
 // GatewayResponse is the HTTP representation of a SimGateway.
 // Sensitive fields (CertPEM, PrivateKeyPEM, EncryptionKey, FactoryKey) are intentionally omitted.
+// ID is the public UUID (ManagementGatewayID); the internal SQLite int64 key is not exposed.
 type GatewayResponse struct {
-	ID                  int64                `json:"id"`
-	ManagementGatewayID uuid.UUID            `json:"managementGatewayId"`
-	FactoryID           string               `json:"factoryId"`
-	SerialNumber        string               `json:"serialNumber"`
-	Model               string               `json:"model"`
-	FirmwareVersion     string               `json:"firmwareVersion"`
-	Provisioned         bool                 `json:"provisioned"`
-	SendFrequencyMs     int                  `json:"sendFrequencyMs"`
-	Status              domain.GatewayStatus `json:"status"`
-	TenantID            string               `json:"tenantId"`
-	CreatedAt           time.Time            `json:"createdAt"`
+	ID              uuid.UUID            `json:"id"`
+	FactoryID       string               `json:"factoryId"`
+	Model           string               `json:"model"`
+	FirmwareVersion string               `json:"firmwareVersion"`
+	Provisioned     bool                 `json:"provisioned"`
+	SendFrequencyMs int                  `json:"sendFrequencyMs"`
+	Status          domain.GatewayStatus `json:"status"`
+	TenantID        string               `json:"tenantId"`
+	CreatedAt       time.Time            `json:"createdAt"`
 }
 
 func GatewayFromDomain(gw *domain.SimGateway) GatewayResponse {
 	return GatewayResponse{
-		ID:                  gw.ID,
-		ManagementGatewayID: gw.ManagementGatewayID,
-		FactoryID:           gw.FactoryID,
-		SerialNumber:        gw.SerialNumber,
-		Model:               gw.Model,
-		FirmwareVersion:     gw.FirmwareVersion,
-		Provisioned:         gw.Provisioned,
-		SendFrequencyMs:     gw.SendFrequencyMs,
-		Status:              gw.Status,
-		TenantID:            gw.TenantID,
-		CreatedAt:           gw.CreatedAt,
+		ID:              gw.ManagementGatewayID,
+		FactoryID:       gw.FactoryID,
+		Model:           gw.Model,
+		FirmwareVersion: gw.FirmwareVersion,
+		Provisioned:     gw.Provisioned,
+		SendFrequencyMs: gw.SendFrequencyMs,
+		Status:          gw.Status,
+		TenantID:        gw.TenantID,
+		CreatedAt:       gw.CreatedAt,
 	}
 }
 
@@ -51,10 +48,11 @@ func GatewayListFromDomain(gws []*domain.SimGateway) []GatewayResponse {
 }
 
 // SensorResponse is the HTTP representation of a SimSensor.
+// ID is the public UUID (SensorID); GatewayID is the gateway's public UUID (ManagementGatewayID).
+// Internal SQLite int64 keys are not exposed.
 type SensorResponse struct {
-	ID        int64                          `json:"id"`
-	GatewayID int64                          `json:"gatewayId"`
-	SensorID  uuid.UUID                      `json:"sensorId"`
+	ID        uuid.UUID                      `json:"id"`
+	GatewayID uuid.UUID                      `json:"gatewayId"`
 	Type      domain.SensorType              `json:"type"`
 	MinRange  float64                        `json:"minRange"`
 	MaxRange  float64                        `json:"maxRange"`
@@ -64,9 +62,8 @@ type SensorResponse struct {
 
 func SensorFromDomain(s *domain.SimSensor) SensorResponse {
 	return SensorResponse{
-		ID:        s.ID,
-		GatewayID: s.GatewayID,
-		SensorID:  s.SensorID,
+		ID:        s.SensorID,
+		GatewayID: s.ManagementGatewayID,
 		Type:      s.Type,
 		MinRange:  s.MinRange,
 		MaxRange:  s.MaxRange,

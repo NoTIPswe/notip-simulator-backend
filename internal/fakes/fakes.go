@@ -201,6 +201,7 @@ type FakeGatewayStore struct {
 	ErrDeleteGateway            error
 	ErrCreateSensor             error
 	ErrGetSensor                error
+	ErrGetSensorBySensorID      error
 	ErrListSensors              error
 	ErrDeleteSensor             error
 }
@@ -352,6 +353,21 @@ func (s *FakeGatewayStore) GetSensor(_ context.Context, id int64) (*domain.SimSe
 	return sn, nil
 }
 
+func (s *FakeGatewayStore) GetSensorBySensorID(_ context.Context, sensorID uuid.UUID) (*domain.SimSensor, error) {
+	if s.ErrGetSensorBySensorID != nil {
+		return nil, s.ErrGetSensorBySensorID
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, sn := range s.sensors {
+		if sn.SensorID == sensorID {
+			cp := *sn
+			return &cp, nil
+		}
+	}
+	return nil, domain.ErrSensorNotFound
+}
+
 func (s *FakeGatewayStore) ListSensors(_ context.Context, gatewayID int64) ([]*domain.SimSensor, error) {
 	if s.ErrListSensors != nil {
 		return nil, s.ErrListSensors
@@ -472,26 +488,26 @@ func (f *FakeGatewayLifecycleService) GetGateway(ctx context.Context, management
 
 // FakeSensorManagementService implements ports.SensorManagementService.
 type FakeSensorManagementService struct {
-	AddSensorFn    func(ctx context.Context, gatewayID int64, sensor domain.SimSensor) (*domain.SimSensor, error)
-	ListSensorsFn  func(ctx context.Context, gatewayID int64) ([]*domain.SimSensor, error)
-	DeleteSensorFn func(ctx context.Context, sensorID int64) error
+	AddSensorFn    func(ctx context.Context, managementGatewayID uuid.UUID, sensor domain.SimSensor) (*domain.SimSensor, error)
+	ListSensorsFn  func(ctx context.Context, managementGatewayID uuid.UUID) ([]*domain.SimSensor, error)
+	DeleteSensorFn func(ctx context.Context, sensorID uuid.UUID) error
 }
 
-func (f *FakeSensorManagementService) AddSensor(ctx context.Context, gatewayID int64, sensor domain.SimSensor) (*domain.SimSensor, error) {
+func (f *FakeSensorManagementService) AddSensor(ctx context.Context, managementGatewayID uuid.UUID, sensor domain.SimSensor) (*domain.SimSensor, error) {
 	if f.AddSensorFn != nil {
-		return f.AddSensorFn(ctx, gatewayID, sensor)
+		return f.AddSensorFn(ctx, managementGatewayID, sensor)
 	}
 	return &sensor, nil
 }
 
-func (f *FakeSensorManagementService) ListSensors(ctx context.Context, gatewayID int64) ([]*domain.SimSensor, error) {
+func (f *FakeSensorManagementService) ListSensors(ctx context.Context, managementGatewayID uuid.UUID) ([]*domain.SimSensor, error) {
 	if f.ListSensorsFn != nil {
-		return f.ListSensorsFn(ctx, gatewayID)
+		return f.ListSensorsFn(ctx, managementGatewayID)
 	}
 	return make([]*domain.SimSensor, 0), nil
 }
 
-func (f *FakeSensorManagementService) DeleteSensor(ctx context.Context, sensorID int64) error {
+func (f *FakeSensorManagementService) DeleteSensor(ctx context.Context, sensorID uuid.UUID) error {
 	if f.DeleteSensorFn != nil {
 		return f.DeleteSensorFn(ctx, sensorID)
 	}
@@ -502,7 +518,7 @@ func (f *FakeSensorManagementService) DeleteSensor(ctx context.Context, sensorID
 type FakeSimulatorControlService struct {
 	UpdateConfigFn         func(ctx context.Context, managementID uuid.UUID, update domain.GatewayConfigUpdate) error
 	InjectGatewayAnomalyFn func(ctx context.Context, managementID uuid.UUID, cmd domain.GatewayAnomalyCommand) error
-	InjectSensorOutlierFn  func(ctx context.Context, sensorID int64, value *float64) error
+	InjectSensorOutlierFn  func(ctx context.Context, sensorID uuid.UUID, value *float64) error
 }
 
 func (f *FakeSimulatorControlService) UpdateConfig(ctx context.Context, managementID uuid.UUID, update domain.GatewayConfigUpdate) error {
@@ -519,7 +535,7 @@ func (f *FakeSimulatorControlService) InjectGatewayAnomaly(ctx context.Context, 
 	return nil
 }
 
-func (f *FakeSimulatorControlService) InjectSensorOutlier(ctx context.Context, sensorID int64, value *float64) error {
+func (f *FakeSimulatorControlService) InjectSensorOutlier(ctx context.Context, sensorID uuid.UUID, value *float64) error {
 	if f.InjectSensorOutlierFn != nil {
 		return f.InjectSensorOutlierFn(ctx, sensorID, value)
 	}

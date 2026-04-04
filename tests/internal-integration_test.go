@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	httpadapter "github.com/NoTIPswe/notip-simulator-backend/internal/adapters/http"
+	"github.com/NoTIPswe/notip-simulator-backend/internal/adapters/http/dto"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/app"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/config"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
@@ -130,14 +131,13 @@ func (e *testEnv) postJSON(t *testing.T, path string, body any) *http.Response {
 	return resp
 }
 
-// createGateway POSTs a gateway and returns the decoded SimGateway.
+// createGateway POSTs a gateway and returns the decoded GatewayResponse.
 // Fails the test immediately if the response is not 201.
-func (e *testEnv) createGateway(t *testing.T) *domain.SimGateway {
+func (e *testEnv) createGateway(t *testing.T) *dto.GatewayResponse {
 	t.Helper()
 	resp := e.postJSON(t, pathSimGateways, domain.CreateGatewayRequest{
 		FactoryID:       "factory-1",
 		FactoryKey:      "key-1",
-		SerialNumber:    "SN-001",
 		Model:           "ModelX",
 		FirmwareVersion: "1.0.0",
 		SendFrequencyMs: 50,
@@ -147,7 +147,7 @@ func (e *testEnv) createGateway(t *testing.T) *domain.SimGateway {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("createGateway: expected 201, got %d", resp.StatusCode)
 	}
-	var gw domain.SimGateway
+	var gw dto.GatewayResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gw); err != nil {
 		t.Fatalf("createGateway: decode: %v", err)
 	}
@@ -160,8 +160,8 @@ func TestIntegrationCreateGatewaySuccess(t *testing.T) {
 	e := newIntegrationEnv(t)
 	gw := e.createGateway(t)
 
-	if gw.ManagementGatewayID == (uuid.UUID{}) {
-		t.Error("ManagementGatewayID should not be zero")
+	if gw.ID == (uuid.UUID{}) {
+		t.Error("gateway ID should not be zero UUID")
 	}
 	if gw.TenantID != tenantOneID {
 		t.Errorf("TenantID: want 'tenant-1', got %q", gw.TenantID)
@@ -255,7 +255,7 @@ func TestIntegrationListGatewaysMultiple(t *testing.T) {
 
 	defer func() { _ = resp.Body.Close() }()
 
-	var gateways []*domain.SimGateway
+	var gateways []dto.GatewayResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gateways); err != nil {
 		t.Fatalf(decodeErrMsg, err)
 	}
@@ -268,7 +268,7 @@ func TestIntegrationGetGatewaySuccess(t *testing.T) {
 	e := newIntegrationEnv(t)
 	created := e.createGateway(t)
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, fmt.Sprintf(gatewayByIDURLFmt, e.server.URL, created.ManagementGatewayID), nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, fmt.Sprintf(gatewayByIDURLFmt, e.server.URL, created.ID), nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET gateway: %v", err)
@@ -278,13 +278,12 @@ func TestIntegrationGetGatewaySuccess(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
-	var gw domain.SimGateway
+	var gw dto.GatewayResponse
 	if err := json.NewDecoder(resp.Body).Decode(&gw); err != nil {
 		t.Fatalf(decodeErrMsg, err)
 	}
-	if gw.ManagementGatewayID != created.ManagementGatewayID {
-		t.Errorf("ManagementGatewayID mismatch: want %s, got %s",
-			created.ManagementGatewayID, gw.ManagementGatewayID)
+	if gw.ID != created.ID {
+		t.Errorf("ID mismatch: want %s, got %s", created.ID, gw.ID)
 	}
 }
 
@@ -322,7 +321,7 @@ func TestIntegrationStopGatewaySuccess(t *testing.T) {
 	e := newIntegrationEnv(t)
 	gw := e.createGateway(t)
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, fmt.Sprintf("%s/sim/gateways/%s/stop", e.server.URL, gw.ManagementGatewayID), nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, fmt.Sprintf("%s/sim/gateways/%s/stop", e.server.URL, gw.ID), nil)
 	req.Header.Set(headerContentType, contentTypeJSON)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -356,7 +355,7 @@ func TestIntegrationStartGatewayAlreadyRunning(t *testing.T) {
 	gw := e.createGateway(t)
 
 	// Gateway is Running right after CreateAndStart — starting again must fail.
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, fmt.Sprintf("%s/sim/gateways/%s/start", e.server.URL, gw.ManagementGatewayID), nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, fmt.Sprintf("%s/sim/gateways/%s/start", e.server.URL, gw.ID), nil)
 	req.Header.Set(headerContentType, contentTypeJSON)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -406,7 +405,7 @@ func TestIntegrationDeleteGatewaySuccess(t *testing.T) {
 	gw := e.createGateway(t)
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodDelete,
-		fmt.Sprintf(gatewayByIDURLFmt, e.server.URL, gw.ManagementGatewayID), nil)
+		fmt.Sprintf(gatewayByIDURLFmt, e.server.URL, gw.ID), nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("DELETE gateway: %v", err)
@@ -417,7 +416,7 @@ func TestIntegrationDeleteGatewaySuccess(t *testing.T) {
 		t.Errorf(expected204Msg, resp.StatusCode)
 	}
 	// Verify it was actually removed from the store.
-	if _, err := e.store.GetGateway(context.Background(), gw.ID); err == nil {
+	if _, err := e.store.GetGatewayByManagementID(context.Background(), gw.ID); err == nil {
 		t.Error("gateway should have been deleted from the store after decommission")
 	}
 }
@@ -452,8 +451,8 @@ func TestIntegrationBulkCreateAllSuccess(t *testing.T) {
 		t.Errorf("expected 201, got %d", resp.StatusCode)
 	}
 	var result struct {
-		Gateways []*domain.SimGateway `json:"gateways"`
-		Errors   []string             `json:"errors"`
+		Gateways []dto.GatewayResponse `json:"gateways"`
+		Errors   []string              `json:"errors"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf(decodeErrMsg, err)
@@ -485,7 +484,7 @@ func TestIntegrationInjectNetworkDegradationSuccess(t *testing.T) {
 	gw := e.createGateway(t)
 
 	resp := e.postJSON(t,
-		fmt.Sprintf(gatewayNetworkDegradationPathFmt, gw.ManagementGatewayID),
+		fmt.Sprintf(gatewayNetworkDegradationPathFmt, gw.ID),
 		map[string]any{"duration_seconds": 10, "packet_loss_pct": 0.5},
 	)
 	defer func() { _ = resp.Body.Close() }()
@@ -501,7 +500,7 @@ func TestIntegrationInjectNetworkDegradationDefaultPacketLoss(t *testing.T) {
 
 	// Omitting packet_loss_pct — handler defaults it to 0.3.
 	resp := e.postJSON(t,
-		fmt.Sprintf(gatewayNetworkDegradationPathFmt, gw.ManagementGatewayID),
+		fmt.Sprintf(gatewayNetworkDegradationPathFmt, gw.ID),
 		map[string]any{"duration_seconds": 5},
 	)
 
@@ -532,7 +531,7 @@ func TestIntegrationInjectDisconnectSuccess(t *testing.T) {
 	gw := e.createGateway(t)
 
 	resp := e.postJSON(t,
-		fmt.Sprintf("/sim/gateways/%s/anomaly/disconnect", gw.ManagementGatewayID),
+		fmt.Sprintf("/sim/gateways/%s/anomaly/disconnect", gw.ID),
 		map[string]any{"duration_seconds": 5},
 	)
 	defer func() { _ = resp.Body.Close() }()
@@ -547,7 +546,7 @@ func TestIntegrationInjectDisconnectZeroDuration(t *testing.T) {
 	gw := e.createGateway(t)
 
 	resp := e.postJSON(t,
-		fmt.Sprintf("/sim/gateways/%s/anomaly/disconnect", gw.ManagementGatewayID),
+		fmt.Sprintf("/sim/gateways/%s/anomaly/disconnect", gw.ID),
 		map[string]any{"duration_seconds": 0},
 	)
 	defer func() { _ = resp.Body.Close() }()
@@ -577,9 +576,9 @@ func TestIntegrationHandleDecommissionRemovesGateway(t *testing.T) {
 	e := newIntegrationEnv(t)
 	gw := e.createGateway(t)
 
-	e.registry.HandleDecommission(gw.TenantID, gw.ManagementGatewayID.String())
+	e.registry.HandleDecommission(gw.TenantID, gw.ID.String())
 
-	if _, err := e.store.GetGateway(context.Background(), gw.ID); err == nil {
+	if _, err := e.store.GetGatewayByManagementID(context.Background(), gw.ID); err == nil {
 		t.Error("gateway should have been removed from the store after NATS decommission")
 	}
 }
