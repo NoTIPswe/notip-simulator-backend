@@ -115,6 +115,40 @@ func TestGatewayHandlerCreateServiceError500(t *testing.T) {
 	}
 }
 
+func TestGatewayHandlerCreateAlreadyProvisioned409(t *testing.T) {
+	lc := &fakes.FakeGatewayLifecycleService{
+		CreateAndStartFn: func(_ context.Context, _ domain.CreateGatewayRequest) (*domain.SimGateway, error) {
+			return nil, domain.ErrGatewayAlreadyProvisioned
+		},
+	}
+	h := simhttp.NewGatewayHandler(lc)
+
+	req := newReq(http.MethodPost, simHelper, jsonBody(t, domain.CreateGatewayRequest{}))
+	w := httptest.NewRecorder()
+	h.Create(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("want 409, got %d", w.Code)
+	}
+}
+
+func TestGatewayHandlerCreateInvalidFactoryCredentials401(t *testing.T) {
+	lc := &fakes.FakeGatewayLifecycleService{
+		CreateAndStartFn: func(_ context.Context, _ domain.CreateGatewayRequest) (*domain.SimGateway, error) {
+			return nil, domain.ErrInvalidFactoryCredentials
+		},
+	}
+	h := simhttp.NewGatewayHandler(lc)
+
+	req := newReq(http.MethodPost, simHelper, jsonBody(t, domain.CreateGatewayRequest{}))
+	w := httptest.NewRecorder()
+	h.Create(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("want 401, got %d", w.Code)
+	}
+}
+
 func TestGatewayHandlerCreateBadBody400(t *testing.T) {
 	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, simHelper, bytes.NewReader([]byte(invalidJSONBody)))

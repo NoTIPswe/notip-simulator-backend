@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
@@ -100,7 +102,26 @@ func (c *ProvisioningServiceClient) Onboard(
 	}()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return domain.ProvisionResult{}, fmt.Errorf("onboard request failed with status: %d", resp.StatusCode)
+		responseBody, _ := io.ReadAll(resp.Body)
+		responseText := strings.TrimSpace(string(responseBody))
+
+		switch resp.StatusCode {
+		case http.StatusConflict:
+			if responseText == "" {
+				return domain.ProvisionResult{}, domain.ErrGatewayAlreadyProvisioned
+			}
+			return domain.ProvisionResult{}, fmt.Errorf("%w: %s", domain.ErrGatewayAlreadyProvisioned, responseText)
+		case http.StatusUnauthorized:
+			if responseText == "" {
+				return domain.ProvisionResult{}, domain.ErrInvalidFactoryCredentials
+			}
+			return domain.ProvisionResult{}, fmt.Errorf("%w: %s", domain.ErrInvalidFactoryCredentials, responseText)
+		default:
+			if responseText == "" {
+				return domain.ProvisionResult{}, fmt.Errorf("onboard request failed with status: %d", resp.StatusCode)
+			}
+			return domain.ProvisionResult{}, fmt.Errorf("onboard request failed with status: %d: %s", resp.StatusCode, responseText)
+		}
 	}
 
 	var onboardResp onboardResponse

@@ -18,6 +18,10 @@ func writeError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, domain.ErrGatewayAlreadyRunning):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, domain.ErrGatewayAlreadyProvisioned):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, domain.ErrInvalidFactoryCredentials):
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 	default:
 		slog.Error("internal error", "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
