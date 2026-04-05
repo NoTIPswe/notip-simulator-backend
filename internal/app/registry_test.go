@@ -59,6 +59,15 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool) bool {
 	return false
 }
 
+func channelClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
 func provisionResult() domain.ProvisionResult {
 	aesKey, _ := domain.NewEncryptionKey(make([]byte, 32))
 	return domain.ProvisionResult{
@@ -642,6 +651,51 @@ func TestRegistryStartStoppedGatewayRestarts(t *testing.T) {
 	ok := waitFor(t, time.Second, func() bool { return w.IsRunning() })
 	if !ok {
 		t.Error("expected worker to be running after Start")
+	}
+}
+
+func TestCreateAndStartRequestContextCancelDoesNotStopWorker(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	gw, err := reg.CreateAndStart(ctx, makeCreateReq())
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+
+	w := getWorker(t, reg, gw.ManagementGatewayID)
+	cancel()
+
+	closed := waitFor(t, 250*time.Millisecond, func() bool { return channelClosed(w.done) })
+	if closed {
+		t.Fatal("worker stopped when request context was canceled")
+	}
+}
+
+func TestStartRequestContextCancelDoesNotStopWorker(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	if err := reg.Stop(context.Background(), gw.ManagementGatewayID); err != nil {
+		t.Fatalf("unexpected stop error: %v", err)
+	}
+
+	w := getWorker(t, reg, gw.ManagementGatewayID)
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := reg.Start(ctx, gw.ManagementGatewayID); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	cancel()
+
+	closed := waitFor(t, 250*time.Millisecond, func() bool { return channelClosed(w.done) })
+	if closed {
+		t.Fatal("worker stopped when start request context was canceled")
 	}
 }
 

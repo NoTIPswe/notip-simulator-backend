@@ -181,26 +181,26 @@ const (
 )
 
 type CommandConfigPayload struct {
-	SendFrequencyMs *int           `json:"sendFrequencyMs,omitempty"`
+	SendFrequencyMs *int           `json:"send_frequency_ms,omitempty"`
 	Status          *GatewayStatus `json:"status,omitempty"`
 }
 
 type CommandFirmwarePayload struct {
-	FirmwareVersion string `json:"firmwareVersion"`
-	DownloadURL     string `json:"downloadUrl"`
+	FirmwareVersion string `json:"firmware_version"`
+	DownloadURL     string `json:"download_url"`
 }
 
 // IncomingCommand is deserialized from NATS JetStream messages.
 // Payload is a raw JSON object; the worker decodes it based on Type.
 type IncomingCommand struct {
-	CommandID string          `json:"commandId"`
+	CommandID string          `json:"command_id"`
 	Type      CommandType     `json:"type"`
 	Payload   json.RawMessage `json:"payload"`
-	IssuedAt  time.Time       `json:"issuedAt"`
+	IssuedAt  time.Time       `json:"issued_at"`
 }
 
 type CommandACK struct {
-	CommandID string           `json:"commandId"`
+	CommandID string           `json:"command_id"`
 	Status    CommandACKStatus `json:"status"`
 	Message   *string          `json:"message,omitempty"`
 	Timestamp time.Time        `json:"timestamp"`
