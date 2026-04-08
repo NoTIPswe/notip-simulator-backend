@@ -43,7 +43,13 @@ func Run(ctx context.Context) error {
 	met := metrics.NewMetrics()
 	clock := adapters.SystemClock{}
 
-	connector, err := natsadapter.NewNATSMTLSConnector(cfg.NATSUrl, cfg.NATSCACertPath, clock)
+	connector, err := natsadapter.NewNATSMTLSConnector(
+		cfg.NATSUrl,
+		cfg.NATSCACertPath,
+		cfg.NATSTLSCertPath,
+		cfg.NATSTLSKeyPath,
+		clock,
+	)
 	if err != nil {
 		return fmt.Errorf("create NATS connector: %w", err)
 	}
@@ -102,11 +108,29 @@ func setupDecommissionListener(ctx context.Context, cfg *config.Config, registry
 		return nil, errors.New("failed to parse global NATS ca cert")
 	}
 
+	tlsCfg := &tls.Config{
+		RootCAs:    caPool,
+		MinVersion: tls.VersionTLS13,
+	}
+
+	if cfg.NATSTLSCertPath != "" && cfg.NATSTLSKeyPath != "" {
+		clientCertPEM, err := os.ReadFile(cfg.NATSTLSCertPath)
+		if err != nil {
+			return nil, fmt.Errorf("read nats client cert: %w", err)
+		}
+		clientKeyPEM, err := os.ReadFile(cfg.NATSTLSKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("read nats client key: %w", err)
+		}
+		clientCert, err := tls.X509KeyPair(clientCertPEM, clientKeyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("parse nats client cert/key: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{clientCert}
+	}
+
 	globalNats, err := natsio.Connect(cfg.NATSUrl,
-		natsio.Secure(&tls.Config{
-			RootCAs:    caPool,
-			MinVersion: tls.VersionTLS13,
-		}),
+		natsio.Secure(tlsCfg),
 		natsio.MaxReconnects(-1),
 		natsio.ReconnectWait(2*time.Second),
 		natsio.ReconnectJitter(500*time.Millisecond, 2*time.Second),
@@ -184,7 +208,7 @@ func handleShutdown(ctx context.Context, apiSrv *httpadapter.HTTPServer, metSrv 
 	case <-ctx.Done():
 		slog.Info("Shutdown signal received, initiating graceful shutdown")
 
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(ctx, serverShutdownTimeout)
 		defer cancel()
 
 		if err := apiSrv.Stop(shutdownCtx); err != nil {

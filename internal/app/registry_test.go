@@ -59,6 +59,15 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool) bool {
 	return false
 }
 
+func channelClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
 func provisionResult() domain.ProvisionResult {
 	aesKey, _ := domain.NewEncryptionKey(make([]byte, 32))
 	return domain.ProvisionResult{
@@ -75,7 +84,6 @@ func makeCreateReq() domain.CreateGatewayRequest {
 	return domain.CreateGatewayRequest{
 		FactoryID:       "factory1",
 		FactoryKey:      "fkey1",
-		SerialNumber:    "SN001",
 		Model:           "TestModel",
 		FirmwareVersion: "1.0.0",
 		SendFrequencyMs: 50,
@@ -316,8 +324,7 @@ func TestAddSensorSuccess(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	sensor, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID,
+	sensor, err := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
 		Type:      domain.Temperature,
 		MinRange:  0,
 		MaxRange:  100,
@@ -342,8 +349,7 @@ func TestAddSensorStoreError(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID,
+	_, err := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
 		Type:      domain.Humidity,
 		MinRange:  0,
 		MaxRange:  100,
@@ -361,23 +367,23 @@ func TestListSensorsSuccess(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, err1 := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, Algorithm: domain.UniformRandom,
+	_, err1 := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, Algorithm: domain.UniformRandom,
 		MinRange: 0, MaxRange: 50,
 	})
 	if err1 != nil {
 		t.Fatalf("unexpected error adding sensor 1: %v", err1)
 	}
 
-	_, err2 := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Humidity, Algorithm: domain.Constant,
+	_, err2 := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Humidity, Algorithm: domain.Constant,
 		MinRange: 10, MaxRange: 90,
 	})
 	if err2 != nil {
 		t.Fatalf("unexpected error adding sensor 2: %v", err2)
 	}
 
-	sensors, err := reg.ListSensors(context.Background(), gw.ID)
+	sensors, err := reg.ListSensors(context.Background(), gw.ManagementGatewayID)
 	if err != nil {
 		t.Fatalf(unexpectedErrorMsg, err)
 	}
@@ -393,8 +399,7 @@ func TestDeleteSensorSuccess(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	sensor, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID,
+	sensor, err := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
 		Type:      domain.Temperature,
 		Algorithm: domain.UniformRandom,
 		MinRange:  0,
@@ -405,7 +410,7 @@ func TestDeleteSensorSuccess(t *testing.T) {
 		t.Fatalf("unexpected error adding sensor: %v", err)
 	}
 
-	err = reg.DeleteSensor(context.Background(), sensor.ID)
+	err = reg.DeleteSensor(context.Background(), sensor.SensorID)
 	if err != nil {
 		t.Fatalf(unexpectedErrorMsg, err)
 	}
@@ -419,8 +424,7 @@ func TestDeleteSensorStoreError(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	sensor, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID,
+	sensor, err := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
 		Type:      domain.Temperature,
 		Algorithm: domain.UniformRandom,
 		MinRange:  0,
@@ -431,7 +435,7 @@ func TestDeleteSensorStoreError(t *testing.T) {
 		t.Fatalf("unexpected error adding sensor: %v", err)
 	}
 
-	err = reg.DeleteSensor(context.Background(), sensor.ID)
+	err = reg.DeleteSensor(context.Background(), sensor.SensorID)
 	if err == nil {
 		t.Fatal("expected error when store.DeleteSensor fails")
 	}
@@ -520,12 +524,12 @@ func TestInjectSensorOutlierSuccess(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	sensor, _ := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	sensor, _ := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	val := 9999.9
-	err := reg.InjectSensorOutlier(context.Background(), sensor.ID, &val)
+	err := reg.InjectSensorOutlier(context.Background(), sensor.SensorID, &val)
 	if err != nil {
 		t.Fatalf(unexpectedErrorMsg, err)
 	}
@@ -647,6 +651,51 @@ func TestRegistryStartStoppedGatewayRestarts(t *testing.T) {
 	ok := waitFor(t, time.Second, func() bool { return w.IsRunning() })
 	if !ok {
 		t.Error("expected worker to be running after Start")
+	}
+}
+
+func TestCreateAndStartRequestContextCancelDoesNotStopWorker(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	gw, err := reg.CreateAndStart(ctx, makeCreateReq())
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+
+	w := getWorker(t, reg, gw.ManagementGatewayID)
+	cancel()
+
+	closed := waitFor(t, 250*time.Millisecond, func() bool { return channelClosed(w.done) })
+	if closed {
+		t.Fatal("worker stopped when request context was canceled")
+	}
+}
+
+func TestStartRequestContextCancelDoesNotStopWorker(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
+	if err := reg.Stop(context.Background(), gw.ManagementGatewayID); err != nil {
+		t.Fatalf("unexpected stop error: %v", err)
+	}
+
+	w := getWorker(t, reg, gw.ManagementGatewayID)
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := reg.Start(ctx, gw.ManagementGatewayID); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	cancel()
+
+	closed := waitFor(t, 250*time.Millisecond, func() bool { return channelClosed(w.done) })
+	if closed {
+		t.Fatal("worker stopped when start request context was canceled")
 	}
 }
 
@@ -821,12 +870,12 @@ func TestInjectSensorOutlierNilValueUsesDefault(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	sensor, _ := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.Spike,
+	sensor, _ := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.Spike,
 	})
 
 	// When Value is nil, the generator logic should apply its default spike behavior.
-	err := reg.InjectSensorOutlier(context.Background(), sensor.ID, nil)
+	err := reg.InjectSensorOutlier(context.Background(), sensor.SensorID, nil)
 
 	if err != nil {
 		t.Fatalf("unexpected failure when injecting outlier with nil value: %v.", err)
@@ -841,8 +890,7 @@ func TestAddSensorInvalidRangeReturnsError(t *testing.T) {
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
 
-	_, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID,
+	_, err := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
 		Type:      domain.Temperature,
 		MinRange:  100,
 		MaxRange:  100,
@@ -925,10 +973,10 @@ func TestGetGatewayGenericStoreError(t *testing.T) {
 // InjectSensorOutlier: store returns domain.ErrSensorNotFound.
 func TestInjectSensorOutlierStoreReturnsErrSensorNotFound(t *testing.T) {
 	d := newTestDeps()
-	d.store.ErrGetSensor = domain.ErrSensorNotFound
+	d.store.ErrGetSensorBySensorID = domain.ErrSensorNotFound
 	reg := newTestRegistry(d)
 
-	err := reg.InjectSensorOutlier(context.Background(), 1, nil)
+	err := reg.InjectSensorOutlier(context.Background(), uuid.New(), nil)
 	if !errors.Is(err, domain.ErrSensorNotFound) {
 		t.Errorf("expected ErrSensorNotFound, got %v", err)
 	}
@@ -942,8 +990,8 @@ func TestInjectSensorOutlierChannelFull(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	sensor, _ := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	sensor, _ := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	w := getWorker(t, reg, gw.ManagementGatewayID)
@@ -955,7 +1003,7 @@ func TestInjectSensorOutlierChannelFull(t *testing.T) {
 	}
 
 	val := 9999.0
-	err := reg.InjectSensorOutlier(context.Background(), sensor.ID, &val)
+	err := reg.InjectSensorOutlier(context.Background(), sensor.SensorID, &val)
 	if err == nil {
 		t.Fatal("expected error when outlier channel is full")
 	}
@@ -1065,8 +1113,8 @@ func TestRestoreAllWithSensorsCoversGeneratorLoop(t *testing.T) {
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
 	// Add a sensor so it is stored and returned during RestoreAll.
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	_ = reg.Stop(context.Background(), gw.ManagementGatewayID)
@@ -1090,8 +1138,8 @@ func TestAddSensorStoreErrorWithValidRanges(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature,
+	_, err := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type:     domain.Temperature,
 		MinRange: 0, MaxRange: 100, // valid ranges so CreateSensor is actually called
 		Algorithm: domain.UniformRandom,
 	})
@@ -1106,16 +1154,17 @@ func TestInjectSensorOutlierSensorExistsButNoWorker(t *testing.T) {
 	reg := newTestRegistry(d)
 
 	// Insert a sensor directly into the store with a gateway ID that has no worker.
-	sensorID, _ := d.store.CreateSensor(context.Background(), domain.SimSensor{
+	sensorUUID := uuid.New()
+	_, _ = d.store.CreateSensor(context.Background(), domain.SimSensor{
 		GatewayID: 9999,
-		SensorID:  uuid.New(),
+		SensorID:  sensorUUID,
 		Type:      domain.Temperature,
 		MinRange:  0,
 		MaxRange:  100,
 		Algorithm: domain.UniformRandom,
 	})
 
-	err := reg.InjectSensorOutlier(context.Background(), sensorID, nil)
+	err := reg.InjectSensorOutlier(context.Background(), sensorUUID, nil)
 	if !errors.Is(err, domain.ErrGatewayNotFound) {
 		t.Errorf("expected ErrGatewayNotFound when sensor exists but no worker, got %v", err)
 	}

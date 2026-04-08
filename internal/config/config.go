@@ -11,6 +11,8 @@ type Config struct {
 	ProvisioningURL        string
 	NATSUrl                string
 	NATSCACertPath         string
+	NATSTLSCertPath        string
+	NATSTLSKeyPath         string
 	SQLitePath             string
 	HTTPAddr               string
 	DefaultSendFrequencyMs int
@@ -27,6 +29,8 @@ func Load() (*Config, error) {
 		ProvisioningURL: getEnv("PROVISIONING_URL", ""),
 		NATSUrl:         getEnv("NATS_URL", ""),
 		NATSCACertPath:  getEnv("NATS_CA_CERT_PATH", ""),
+		NATSTLSCertPath: getEnv("NATS_TLS_CERT", ""),
+		NATSTLSKeyPath:  getEnv("NATS_TLS_KEY", ""),
 	}
 
 	var errs []error
@@ -39,6 +43,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.NATSCACertPath == "" {
 		errs = append(errs, errors.New("NATS_CA_CERT_PATH is required"))
+	}
+	if (cfg.NATSTLSCertPath == "") != (cfg.NATSTLSKeyPath == "") {
+		errs = append(errs, errors.New("NATS_TLS_CERT and NATS_TLS_KEY must both be set or both be empty"))
 	}
 
 	if len(errs) > 0 {

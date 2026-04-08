@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestDecommissionListener_ExtractIDs_ValidSubject(t *testing.T) {
+func TestDecommissionListenerExtractIDsValidSubject(t *testing.T) {
 	tenantID := uuid.New().String()
 	gatewayID := uuid.New().String()
 	subject := "gateway.decommissioned." + tenantID + "." + gatewayID
@@ -28,7 +28,7 @@ func TestDecommissionListener_ExtractIDs_ValidSubject(t *testing.T) {
 	}
 }
 
-func TestDecommissionListener_ExtractIDs_InvalidFormat(t *testing.T) {
+func TestDecommissionListenerExtractIDsInvalidFormat(t *testing.T) {
 	receiver := &fakes.FakeDecommissionEventReceiver{}
 	l := &NATSDecommissionListener{receiver: receiver}
 
@@ -39,7 +39,7 @@ func TestDecommissionListener_ExtractIDs_InvalidFormat(t *testing.T) {
 	}
 }
 
-func TestDecommissionListener_ExtractIDs_InvalidGatewayUUID(t *testing.T) {
+func TestDecommissionListenerExtractIDsInvalidGatewayUUID(t *testing.T) {
 	tenantID := uuid.New().String()
 	subject := "gateway.decommissioned." + tenantID + ".not-a-uuid"
 
@@ -53,7 +53,18 @@ func TestDecommissionListener_ExtractIDs_InvalidGatewayUUID(t *testing.T) {
 	}
 }
 
-func TestDecommissionListener_ExtractIDs_InvalidTenantUUID(t *testing.T) {
+func TestNewNATSDecommissionListenerConstruction(t *testing.T) {
+	receiver := &fakes.FakeDecommissionEventReceiver{}
+	l := NewNATSDecommissionListener(nil, receiver)
+	if l == nil {
+		t.Fatal("expected non-nil listener")
+	}
+	if l.receiver != receiver {
+		t.Error("receiver not stored correctly")
+	}
+}
+
+func TestDecommissionListenerExtractIDsInvalidTenantUUID(t *testing.T) {
 	gatewayID := uuid.New().String()
 	subject := "gateway.decommissioned.not-a-uuid." + gatewayID
 

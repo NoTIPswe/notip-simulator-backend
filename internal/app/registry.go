@@ -32,6 +32,7 @@ const (
 	stageStore
 	stageConnect
 	errNotFoundFormat     = "%w: %s"
+	errGetGatewayFormat   = "get gateway: %w"
 	bulkCreateConcurrency = 10
 )
 
@@ -80,7 +81,6 @@ func (r *GatewayRegistry) CreateAndStart(ctx context.Context, req domain.CreateG
 	gw := domain.SimGateway{
 		FactoryID:       req.FactoryID,
 		FactoryKey:      req.FactoryKey,
-		SerialNumber:    req.SerialNumber,
 		Model:           req.Model,
 		FirmwareVersion: req.FirmwareVersion,
 		SendFrequencyMs: sendFrequency,
@@ -110,7 +110,6 @@ func (r *GatewayRegistry) BulkCreateGateways(ctx context.Context, req domain.Bul
 			gw, err := r.CreateAndStart(ctx, domain.CreateGatewayRequest{
 				FactoryID:       req.FactoryID,
 				FactoryKey:      req.FactoryKey,
-				SerialNumber:    fmt.Sprintf("SN-SIM-%d", idx),
 				Model:           req.Model,
 				FirmwareVersion: req.FirmwareVersion,
 				SendFrequencyMs: req.SendFrequencyMs,
@@ -137,7 +136,7 @@ func (r *GatewayRegistry) Start(ctx context.Context, managementID uuid.UUID) err
 		return nil
 	}
 
-	w.Start(ctx)
+	w.Start(context.WithoutCancel(ctx))
 	return r.store.UpdateStatus(ctx, w.gateway.ID, domain.Online)
 }
 
@@ -192,20 +191,29 @@ func (r *GatewayRegistry) GetGateway(ctx context.Context, managementID uuid.UUID
 		if errors.Is(err, domain.ErrGatewayNotFound) {
 			return nil, fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementID)
 		}
-		return nil, fmt.Errorf("get gateway: %w", err)
+		return nil, fmt.Errorf(errGetGatewayFormat, err)
 	}
 	return gw, nil
 }
 
 // SensorManagementService methods.
 
-func (r *GatewayRegistry) AddSensor(ctx context.Context, gatewayID int64, sensor domain.SimSensor) (*domain.SimSensor, error) {
+func (r *GatewayRegistry) AddSensor(ctx context.Context, managementGatewayID uuid.UUID, sensor domain.SimSensor) (*domain.SimSensor, error) {
 	if sensor.MinRange >= sensor.MaxRange {
 		return nil, fmt.Errorf("%w: minRange %.2f must be less than maxRange %.2f", domain.ErrInvalidSensorRange, sensor.MinRange, sensor.MaxRange)
 	}
 
+	gw, err := r.store.GetGatewayByManagementID(ctx, managementGatewayID)
+	if err != nil {
+		if errors.Is(err, domain.ErrGatewayNotFound) {
+			return nil, fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementGatewayID)
+		}
+		return nil, fmt.Errorf(errGetGatewayFormat, err)
+	}
+
 	sensor.SensorID = uuid.New()
-	sensor.GatewayID = gatewayID
+	sensor.GatewayID = gw.ID
+	sensor.ManagementGatewayID = managementGatewayID
 	sensor.CreatedAt = r.clock.Now()
 
 	id, err := r.store.CreateSensor(ctx, sensor)
@@ -216,26 +224,43 @@ func (r *GatewayRegistry) AddSensor(ctx context.Context, gatewayID int64, sensor
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	for _, w := range r.workers {
-		if w.gateway.ID == gatewayID {
-			gen := generator.NewGeneratorFactory().New(&sensor, r.clock)
-			err := w.AttachSensor(&sensor, gen)
-			if err != nil {
-				return nil, fmt.Errorf("failed to attach sensor to worker: %w", err)
-			}
-			break
+	if w, ok := r.workers[managementGatewayID]; ok {
+		gen := generator.NewGeneratorFactory().New(&sensor, r.clock)
+		if err := w.AttachSensor(&sensor, gen); err != nil {
+			return nil, fmt.Errorf("failed to attach sensor to worker: %w", err)
 		}
 	}
 
 	return &sensor, nil
 }
 
-func (r *GatewayRegistry) ListSensors(ctx context.Context, gatewayID int64) ([]*domain.SimSensor, error) {
-	return r.store.ListSensors(ctx, gatewayID)
+func (r *GatewayRegistry) ListSensors(ctx context.Context, managementGatewayID uuid.UUID) ([]*domain.SimSensor, error) {
+	gw, err := r.store.GetGatewayByManagementID(ctx, managementGatewayID)
+	if err != nil {
+		if errors.Is(err, domain.ErrGatewayNotFound) {
+			return nil, fmt.Errorf(errNotFoundFormat, domain.ErrGatewayNotFound, managementGatewayID)
+		}
+		return nil, fmt.Errorf(errGetGatewayFormat, err)
+	}
+
+	sensors, err := r.store.ListSensors(ctx, gw.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, s := range sensors {
+		s.ManagementGatewayID = managementGatewayID
+	}
+
+	return sensors, nil
 }
 
-func (r *GatewayRegistry) DeleteSensor(ctx context.Context, sensorID int64) error {
-	return r.store.DeleteSensor(ctx, sensorID)
+func (r *GatewayRegistry) DeleteSensor(ctx context.Context, sensorID uuid.UUID) error {
+	sensor, err := r.store.GetSensorBySensorID(ctx, sensorID)
+	if err != nil {
+		return err
+	}
+	return r.store.DeleteSensor(ctx, sensor.ID)
 }
 
 // SimulatorControlService methods.
@@ -276,11 +301,11 @@ func (r *GatewayRegistry) InjectGatewayAnomaly(ctx context.Context, managementID
 
 // InjectSensorOutlier resolves the sensor from the store, finds its gateway worker, and enqueues the command.
 // Store lookup is done here so the HTTP adapter does not need a store dependency.
-func (r *GatewayRegistry) InjectSensorOutlier(ctx context.Context, sensorID int64, value *float64) error {
-	sensor, err := r.store.GetSensor(ctx, sensorID)
+func (r *GatewayRegistry) InjectSensorOutlier(ctx context.Context, sensorID uuid.UUID, value *float64) error {
+	sensor, err := r.store.GetSensorBySensorID(ctx, sensorID)
 	if err != nil {
 		if errors.Is(err, domain.ErrSensorNotFound) {
-			return fmt.Errorf("%w: sensor %d", domain.ErrSensorNotFound, sensorID)
+			return fmt.Errorf("%w: sensor %s", domain.ErrSensorNotFound, sensorID)
 		}
 		return fmt.Errorf("get sensor: %w", err)
 	}
@@ -296,7 +321,7 @@ func (r *GatewayRegistry) InjectSensorOutlier(ctx context.Context, sensorID int6
 	r.mu.RUnlock()
 
 	if w == nil {
-		return fmt.Errorf("%w: gateway for sensor %d", domain.ErrGatewayNotFound, sensorID)
+		return fmt.Errorf("%w: gateway for sensor %s", domain.ErrGatewayNotFound, sensorID)
 	}
 
 	cmd := domain.SensorOutlierCommand{
@@ -307,7 +332,7 @@ func (r *GatewayRegistry) InjectSensorOutlier(ctx context.Context, sensorID int6
 	select {
 	case w.outlierCh <- cmd:
 	default:
-		return fmt.Errorf("outlier channel full for sensor %d", sensorID)
+		return fmt.Errorf("outlier channel full for sensor %s", sensorID)
 	}
 	return nil
 }
@@ -459,8 +484,9 @@ func (r *GatewayRegistry) startWorker(ctx context.Context, gw *domain.SimGateway
 	}
 
 	w := NewGatewayWorker(deps)
-	w.Start(ctx)
-	commandPumpCtx, cancelCommandPump := context.WithCancel(ctx)
+	workerCtx := context.WithoutCancel(ctx)
+	w.Start(workerCtx)
+	commandPumpCtx, cancelCommandPump := context.WithCancel(workerCtx)
 	w.commandPumpCancel = cancelCommandPump
 
 	go func() {

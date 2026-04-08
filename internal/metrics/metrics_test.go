@@ -6,41 +6,43 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/metrics"
 )
 
-func TestNewTestMetrics_ReturnsNonNil(t *testing.T) {
+func TestNewTestMetricsReturnsNonNil(t *testing.T) {
 	m := metrics.NewTestMetrics()
 	if m == nil {
 		t.Fatal("expected non-nil Metrics")
 	}
 }
 
-func TestMetrics_GaugeOperations_NoPanic(t *testing.T) {
+func TestMetricsGaugeOperationsNoPanic(t *testing.T) {
 	m := metrics.NewTestMetrics()
 	m.GatewaysRunning.Set(3)
 	m.GatewaysRunning.Inc()
 	m.GatewaysRunning.Dec()
 }
 
-func TestMetrics_CounterVec_NoPanic(t *testing.T) {
+const testGatewayID = "gw-test"
+
+func TestMetricsCounterVecNoPanic(t *testing.T) {
 	m := metrics.NewTestMetrics()
-	m.EnvelopesPublished.WithLabelValues("gw-test").Inc()
-	m.PublishErrors.WithLabelValues("gw-test").Inc()
-	m.BufferDropped.WithLabelValues("gw-test").Inc()
-	m.NATSReconnects.WithLabelValues("gw-test").Inc()
+	m.EnvelopesPublished.WithLabelValues(testGatewayID).Inc()
+	m.PublishErrors.WithLabelValues(testGatewayID).Inc()
+	m.BufferDropped.WithLabelValues(testGatewayID).Inc()
+	m.NATSReconnects.WithLabelValues(testGatewayID).Inc()
 	m.AnomaliesInjected.WithLabelValues("network_degradation").Inc()
 }
 
-func TestMetrics_GaugeVec_NoPanic(t *testing.T) {
+func TestMetricsGaugeVecNoPanic(t *testing.T) {
 	m := metrics.NewTestMetrics()
-	m.BufferFill.WithLabelValues("gw-test").Set(5)
+	m.BufferFill.WithLabelValues(testGatewayID).Set(5)
 }
 
-func TestMetrics_Counters_NoPanic(t *testing.T) {
+func TestMetricsCountersNoPanic(t *testing.T) {
 	m := metrics.NewTestMetrics()
 	m.ProvisioningSuccess.Inc()
 	m.ProvisioningErrors.Inc()
 }
 
-func TestNewTestMetrics_MultipleInstances_NoPanic(t *testing.T) {
+func TestNewTestMetricsMultipleInstancesNoPanic(t *testing.T) {
 	// NewTestMetrics deve usare registries isolate (non il registry globale di Prometheus)
 	m1 := metrics.NewTestMetrics()
 	m2 := metrics.NewTestMetrics()

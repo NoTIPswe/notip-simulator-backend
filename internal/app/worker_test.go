@@ -123,8 +123,7 @@ func TestWorkerPublishesTelemetryWhenSensorAdded(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
 		Type:      domain.Temperature,
 		MinRange:  0,
 		MaxRange:  100,
@@ -179,8 +178,8 @@ func TestWorkerNetworkDegradation100PctLossStopsPublish(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	// Waits for a message before the anomaly.
@@ -212,8 +211,8 @@ func TestWorkerDisconnectPausesTelemetryWithoutClosingPublisher(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	pub := d.connector.Publisher
@@ -300,8 +299,8 @@ func TestWorkerAddSensorToRunningWorker(t *testing.T) {
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
 	//Adds a sensor to the worker while it's already executing.
-	sensor, err := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Pressure, MinRange: 900, MaxRange: 1100, Algorithm: domain.SineWave,
+	sensor, err := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Pressure, MinRange: 900, MaxRange: 1100, Algorithm: domain.SineWave,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -350,8 +349,8 @@ func TestWorkerAnomalyExpiryNetworkDegradationClearsAfterDuration(t *testing.T) 
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	// Inject an anomaly with zero duration to verify immediate expiration.
@@ -377,8 +376,8 @@ func TestWorkerAnomalyExpiryDisconnectResumesPublishingAfterDuration(t *testing.
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	pub := d.connector.Publisher
@@ -466,8 +465,8 @@ func TestWorkerDrainControlChannelsAllFour(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	sensor, _ := reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Pressure, MinRange: 900, MaxRange: 1100, Algorithm: domain.Constant,
+	sensor, _ := reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Pressure, MinRange: 900, MaxRange: 1100, Algorithm: domain.Constant,
 	})
 
 	// 1. configCh.
@@ -482,7 +481,7 @@ func TestWorkerDrainControlChannelsAllFour(t *testing.T) {
 
 	// 3. outlierCh.
 	val := 1200.0
-	_ = reg.InjectSensorOutlier(context.Background(), sensor.ID, &val)
+	_ = reg.InjectSensorOutlier(context.Background(), sensor.SensorID, &val)
 
 	// 4. commandCh (via subscription).
 	drainPayload, _ := json.Marshal(domain.CommandConfigPayload{})
@@ -517,8 +516,8 @@ func TestWorkerEncryptorFailsDoesNotCrash(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	pub := d.connector.Publisher
@@ -635,8 +634,8 @@ func TestWorkerStatusPausedStopsPublish(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	pub := d.connector.Publisher
@@ -663,8 +662,8 @@ func TestWorkerStatusOfflineStopsPublish(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	pub := d.connector.Publisher
@@ -745,8 +744,8 @@ func TestWorkerStatusResumeFromPaused(t *testing.T) {
 	defer reg.StopAll(2 * time.Second)
 
 	gw, _ := reg.CreateAndStart(context.Background(), makeCreateReq())
-	_, _ = reg.AddSensor(context.Background(), gw.ID, domain.SimSensor{
-		GatewayID: gw.ID, Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
+	_, _ = reg.AddSensor(context.Background(), gw.ManagementGatewayID, domain.SimSensor{
+		Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom,
 	})
 
 	pub := d.connector.Publisher

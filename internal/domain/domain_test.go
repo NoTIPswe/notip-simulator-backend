@@ -8,7 +8,7 @@ import (
 
 //EncryptionKey.
 
-func TestNewEncryptionKey_Valid32Bytes(t *testing.T) {
+func TestNewEncryptionKeyValid32Bytes(t *testing.T) {
 	raw := make([]byte, 32)
 	for i := range raw {
 		raw[i] = byte(i)
@@ -22,7 +22,7 @@ func TestNewEncryptionKey_Valid32Bytes(t *testing.T) {
 	}
 }
 
-func TestNewEncryptionKey_WrongLength_ReturnsError(t *testing.T) {
+func TestNewEncryptionKeyWrongLengthReturnsError(t *testing.T) {
 	cases := [][]byte{
 		{},
 		make([]byte, 16),
@@ -38,7 +38,7 @@ func TestNewEncryptionKey_WrongLength_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestEncryptionKey_Bytes_ReturnsCopy(t *testing.T) {
+func TestEncryptionKeyBytesReturnsCopy(t *testing.T) {
 	raw := make([]byte, 32)
 	raw[0] = 0xAB
 	key, _ := domain.NewEncryptionKey(raw)
@@ -53,7 +53,7 @@ func TestEncryptionKey_Bytes_ReturnsCopy(t *testing.T) {
 }
 
 // GatewayStatus.
-func TestGatewayStatus_Values_Distinct(t *testing.T) {
+func TestGatewayStatusValuesDistinct(t *testing.T) {
 	statuses := []domain.GatewayStatus{
 		domain.Provisioning,
 		domain.Online,
@@ -71,7 +71,7 @@ func TestGatewayStatus_Values_Distinct(t *testing.T) {
 
 //SensorType.
 
-func TestSensorType_AllConstantsDeclared(t *testing.T) {
+func TestSensorTypeAllConstantsDeclared(t *testing.T) {
 	types := []domain.SensorType{
 		domain.Temperature,
 		domain.Humidity,
@@ -85,7 +85,7 @@ func TestSensorType_AllConstantsDeclared(t *testing.T) {
 }
 
 // GenerationAlgorithmtype.
-func TestGenerationAlgorithmType_AllConstantsDeclared(t *testing.T) {
+func TestGenerationAlgorithmTypeAllConstantsDeclared(t *testing.T) {
 	algos := []domain.GenerationAlgorithmType{
 		domain.UniformRandom,
 		domain.SineWave,
@@ -99,7 +99,7 @@ func TestGenerationAlgorithmType_AllConstantsDeclared(t *testing.T) {
 
 //AnomalyType.
 
-func TestAnomalyType_Values_Distinct(t *testing.T) {
+func TestAnomalyTypeValuesDistinct(t *testing.T) {
 	if domain.NetworkDegradation == domain.Disconnect {
 		t.Error("NetworkDegradation and Disconnect must be distinct")
 	}
@@ -107,13 +107,13 @@ func TestAnomalyType_Values_Distinct(t *testing.T) {
 
 //CommandType & CommandACKStatus.
 
-func TestCommandType_Values_Distinct(t *testing.T) {
+func TestCommandTypeValuesDistinct(t *testing.T) {
 	if domain.ConfigUpdate == domain.FirmwarePush {
 		t.Error("ConfigUpdate and FirmwarePush must be distinct")
 	}
 }
 
-func TestCommandACKStatus_Values_Distinct(t *testing.T) {
+func TestCommandACKStatusValuesDistinct(t *testing.T) {
 	statuses := []domain.CommandACKStatus{domain.ACK, domain.NACK, domain.Expired}
 	seen := map[domain.CommandACKStatus]bool{}
 	for _, s := range statuses {
@@ -126,13 +126,13 @@ func TestCommandACKStatus_Values_Distinct(t *testing.T) {
 
 //Value Objects, zero-value sanity.
 
-func TestTelemetryEnvelope_ZeroValue_NoPanic(t *testing.T) {
+func TestTelemetryEnvelopeZeroValueNoPanic(t *testing.T) {
 	var e domain.TelemetryEnvelope
 	_ = e.GatewayID
 	_ = e.SensorID
 }
 
-func TestCreateGatewayRequest_Fields(t *testing.T) {
+func TestCreateGatewayRequestFields(t *testing.T) {
 	r := domain.CreateGatewayRequest{
 		FactoryID:       "fid",
 		FactoryKey:      "fkey",
@@ -149,7 +149,7 @@ func TestCreateGatewayRequest_Fields(t *testing.T) {
 	}
 }
 
-func TestGatewayConfigUpdate_NilPointers_NoPanic(t *testing.T) {
+func TestGatewayConfigUpdateNilPointersNoPanic(t *testing.T) {
 	u := domain.GatewayConfigUpdate{}
 	if u.SendFrequencyMs != nil {
 		t.Error("expected nil SendFrequencyMs")
@@ -159,7 +159,7 @@ func TestGatewayConfigUpdate_NilPointers_NoPanic(t *testing.T) {
 	}
 }
 
-func TestNetworkDegradationParams_Fields(t *testing.T) {
+func TestNetworkDegradationParamsFields(t *testing.T) {
 	p := domain.NetworkDegradationParams{DurationSeconds: 30, PacketLossPct: 75.5}
 	if p.DurationSeconds != 30 {
 		t.Error("DurationSeconds not set")
@@ -169,7 +169,7 @@ func TestNetworkDegradationParams_Fields(t *testing.T) {
 	}
 }
 
-func TestSensorOutlierCommand_NilValue_NoPanic(t *testing.T) {
+func TestSensorOutlierCommandNilValueNoPanic(t *testing.T) {
 	cmd := domain.SensorOutlierCommand{}
 	if cmd.Value != nil {
 		t.Error("expected nil Value pointer")

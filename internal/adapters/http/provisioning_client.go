@@ -3,16 +3,17 @@ package http
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
@@ -100,8 +101,10 @@ func (c *ProvisioningServiceClient) Onboard(
 		}
 	}()
 
-	if resp.StatusCode != http.StatusOK {
-		return domain.ProvisionResult{}, fmt.Errorf("onboard request failed with status: %d", resp.StatusCode)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		responseBody, _ := io.ReadAll(resp.Body)
+		responseText := strings.TrimSpace(string(responseBody))
+		return domain.ProvisionResult{}, mapOnboardStatusError(resp.StatusCode, responseText)
 	}
 
 	var onboardResp onboardResponse
@@ -129,19 +132,34 @@ func (c *ProvisioningServiceClient) Onboard(
 	}, nil
 }
 
+func mapOnboardStatusError(statusCode int, responseText string) error {
+	var base error
+	switch statusCode {
+	case http.StatusConflict:
+		base = domain.ErrGatewayAlreadyProvisioned
+	case http.StatusUnauthorized:
+		base = domain.ErrInvalidFactoryCredentials
+	default:
+		if responseText == "" {
+			return fmt.Errorf("onboard request failed with status: %d", statusCode)
+		}
+		return fmt.Errorf("onboard request failed with status: %d: %s", statusCode, responseText)
+	}
+	if responseText == "" {
+		return base
+	}
+	return fmt.Errorf("%w: %s", base, responseText)
+}
+
 func (c *ProvisioningServiceClient) generateKeypairAndCSR() (keyPEM, csrPEM []byte, err error) {
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return nil, nil, fmt.Errorf("generate ECDSA key: %w", err)
+		return nil, nil, fmt.Errorf("generate RSA key: %w", err)
 	}
 
-	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal EC private key: %w", err)
-	}
 	keyPEM = pem.EncodeToMemory(&pem.Block{
-		Type:  "EC PRIVATE KEY",
-		Bytes: keyBytes,
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 	})
 
 	// Subject is intentionally empty — identity is embedded by the provisioning service when signing

@@ -3,7 +3,6 @@ CREATE TABLE IF NOT EXISTS gateways (
     management_gateway_id TEXT    NOT NULL UNIQUE,
     factory_id           TEXT    NOT NULL,
     factory_key          TEXT    NOT NULL,
-    serial_number        TEXT    NOT NULL,
     model                TEXT    NOT NULL,
     firmware_version     TEXT    NOT NULL DEFAULT '',
     provisioned          INTEGER NOT NULL DEFAULT 0,

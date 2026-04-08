@@ -27,7 +27,7 @@ func newTestServer(t *testing.T) *httptest.Server {
 	return ts
 }
 
-func TestHTTPServer_Handler_NotNil(t *testing.T) {
+func TestHTTPServerHandlerNotNil(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{}
 	ctrl := &fakes.FakeSimulatorControlService{}
 	svc := &fakes.FakeSensorManagementService{}
@@ -37,7 +37,7 @@ func TestHTTPServer_Handler_NotNil(t *testing.T) {
 	}
 }
 
-func TestHTTPServer_HealthRoute_Returns200(t *testing.T) {
+func TestHTTPServerHealthRouteReturns200(t *testing.T) {
 	ts := newTestServer(t)
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+"/health", nil)
@@ -52,7 +52,7 @@ func TestHTTPServer_HealthRoute_Returns200(t *testing.T) {
 	}
 }
 
-func TestHTTPServer_StartStop(t *testing.T) {
+func TestHTTPServerStartStop(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{}
 	ctrl := &fakes.FakeSimulatorControlService{}
 	svc := &fakes.FakeSensorManagementService{}

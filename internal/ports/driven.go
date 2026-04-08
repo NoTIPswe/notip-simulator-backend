@@ -22,6 +22,7 @@ type GatewayStore interface {
 	ListSensors(ctx context.Context, gatewayID int64) ([]*domain.SimSensor, error)
 	DeleteSensor(ctx context.Context, id int64) error
 	GetSensor(ctx context.Context, id int64) (*domain.SimSensor, error)
+	GetSensorBySensorID(ctx context.Context, sensorID uuid.UUID) (*domain.SimSensor, error)
 	UpdateFrequency(ctx context.Context, id int64, frequency int) error
 }
 

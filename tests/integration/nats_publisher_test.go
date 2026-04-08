@@ -5,53 +5,52 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	natsadapter "github.com/NoTIPswe/notip-simulator-backend/internal/adapters/nats"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
 )
 
-// realPublisher is a minimal ports.GatewayPublisher backed by a plain NATS connection.
-// Used in integration tests to verify that the publish path actually delivers messages
-// to a real NATS broker, without needing mTLS certificates.
-type realPublisher struct {
-	nc *nats.Conn
-}
+func addJetStreamStream(t *testing.T, nc *nats.Conn, subjects ...string) {
+	t.Helper()
 
-func (p *realPublisher) Publish(_ context.Context, subject string, payload []byte) error {
-	return p.nc.Publish(subject, payload)
-}
+	js, err := nc.JetStream()
+	require.NoError(t, err)
 
-func (p *realPublisher) Close() error {
-	if !p.nc.IsClosed() {
-		p.nc.Close()
-	}
-	return nil
-}
-
-func (p *realPublisher) Reconnect(_ context.Context) error {
-	// Not meaningful for plain connections in tests.
-	return nil
+	streamName := "TEST_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     streamName,
+		Subjects: subjects,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = js.DeleteStream(streamName) })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests.
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestNATSPublisher_Publish_MessageArrivesOnSubscriber(t *testing.T) {
+const telemetrySubjectGwABC = "telemetry.data.tenant-1.gw-abc"
+
+func TestNATSPublisherPublishMessageArrivesOnSubscriber(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
+	addJetStreamStream(t, nc, telemetrySubjectGwABC)
 
-	pub := &realPublisher{nc: nc}
+	pub, err := natsadapter.NewNATSGatewayPublisher(nc, env.URI)
+	require.NoError(t, err)
 
 	// Subscribe on a separate connection so we receive our own publish.
 	subConn := connectNATS(t, env.URI)
 	msgCh := make(chan *nats.Msg, 1)
-	sub, err := subConn.Subscribe("telemetry.data.tenant-1.gw-abc", func(m *nats.Msg) {
+	sub, err := subConn.Subscribe(telemetrySubjectGwABC, func(m *nats.Msg) {
 		msgCh <- m
 	})
 	require.NoError(t, err)
@@ -72,7 +71,7 @@ func TestNATSPublisher_Publish_MessageArrivesOnSubscriber(t *testing.T) {
 	payload, err := json.Marshal(envelope)
 	require.NoError(t, err)
 
-	err = pub.Publish(context.Background(), "telemetry.data.tenant-1.gw-abc", payload)
+	err = pub.Publish(context.Background(), telemetrySubjectGwABC, payload)
 	require.NoError(t, err)
 
 	select {
@@ -87,10 +86,13 @@ func TestNATSPublisher_Publish_MessageArrivesOnSubscriber(t *testing.T) {
 	}
 }
 
-func TestNATSPublisher_Publish_SubjectRouting(t *testing.T) {
+func TestNATSPublisherPublishSubjectRouting(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
-	pub := &realPublisher{nc: nc}
+	addJetStreamStream(t, nc, "telemetry.data.>")
+
+	pub, err := natsadapter.NewNATSGatewayPublisher(nc, env.URI)
+	require.NoError(t, err)
 
 	subConn := connectNATS(t, env.URI)
 	hitCh := make(chan string, 5)
@@ -128,22 +130,25 @@ func TestNATSPublisher_Publish_SubjectRouting(t *testing.T) {
 	}
 }
 
-func TestNATSPublisher_Close_StopsPublishing(t *testing.T) {
+func TestNATSPublisherCloseStopsPublishing(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
-	pub := &realPublisher{nc: nc}
+	addJetStreamStream(t, nc, "telemetry.data.x.y")
+
+	pub, err := natsadapter.NewNATSGatewayPublisher(nc, env.URI)
+	require.NoError(t, err)
 
 	require.NoError(t, pub.Close())
-
-	// Publishing after close must return an error (connection is closed).
-	err := pub.Publish(context.Background(), "telemetry.data.x.y", []byte(`{}`))
-	assert.Error(t, err, "publishing on a closed connection must fail")
+	assert.NoError(t, nc.Publish("telemetry.data.x.y", []byte(`{}`)), "publisher close must not close the shared NATS connection")
 }
 
-func TestNATSPublisher_CommandACK_DeliveredCorrectly(t *testing.T) {
+func TestNATSPublisherCommandACKDeliveredCorrectly(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
-	pub := &realPublisher{nc: nc}
+	addJetStreamStream(t, nc, "command.ack.>")
+
+	pub, err := natsadapter.NewNATSGatewayPublisher(nc, env.URI)
+	require.NoError(t, err)
 
 	subConn := connectNATS(t, env.URI)
 	ackCh := make(chan *nats.Msg, 1)
@@ -175,4 +180,57 @@ func TestNATSPublisher_CommandACK_DeliveredCorrectly(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timeout: ACK message never arrived")
 	}
+}
+
+func TestNATSPublisherPublishReturnsErrorWithoutMatchingStream(t *testing.T) {
+	env := startNATS(t)
+	nc := connectNATS(t, env.URI)
+
+	pub, err := natsadapter.NewNATSGatewayPublisher(nc, env.URI)
+	require.NoError(t, err)
+
+	err = pub.Publish(context.Background(), "telemetry.data.no.stream", []byte(`{}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "publish message")
+}
+
+func TestNATSPublisherReconnectContextCanceled(t *testing.T) {
+	env := startNATS(t)
+	nc := connectNATS(t, env.URI)
+
+	pub, err := natsadapter.NewNATSGatewayPublisher(nc, env.URI)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = pub.Reconnect(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestNATSPublisherReconnectErrorWithInvalidServer(t *testing.T) {
+	env := startNATS(t)
+	nc := connectNATS(t, env.URI)
+
+	pub, err := natsadapter.NewNATSGatewayPublisher(nc, "nats://127.0.0.1:1")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	err = pub.Reconnect(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reconnect to NATS")
+}
+
+func TestNATSPublisherReconnectSuccess(t *testing.T) {
+	env := startNATS(t)
+	nc := connectNATS(t, env.URI)
+	addJetStreamStream(t, nc, "telemetry.data.reconnect")
+
+	pub, err := natsadapter.NewNATSGatewayPublisher(nc, env.URI)
+	require.NoError(t, err)
+
+	require.NoError(t, pub.Reconnect(context.Background()))
+	require.NoError(t, pub.Publish(context.Background(), "telemetry.data.reconnect", []byte(`{}`)))
 }

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 
 	"github.com/google/uuid"
@@ -35,15 +34,18 @@ const suffixStartGateway = "/start"
 
 const routeGatewaySensorsAdd = "POST /sim/gateways/{id}/sensors"
 const routeGatewaySensorsList = "GET /sim/gateways/{id}/sensors"
-const pathGateway1Sensors = "/sim/gateways/1/sensors"
+const testGatewayUUIDStr = "11111111-1111-1111-1111-111111111111"
+const testSensorUUIDStr = "22222222-2222-2222-2222-222222222222"
+const pathGateway1Sensors = "/sim/gateways/" + testGatewayUUIDStr + "/sensors"
 const routeDeleteSensorByID = "DELETE /sim/sensors/{sensorId}"
 
 const routeGatewayAnomalyNetworkDegradation = "POST /sim/gateways/{id}/anomaly/network-degradation"
 const suffixAnomalyNetworkDegradation = "/anomaly/network-degradation"
 const routeGatewayAnomalyDisconnect = "POST /sim/gateways/{id}/anomaly/disconnect"
 const suffixAnomalyDisconnect = "/anomaly/disconnect"
+const pathSimSensors = "/sim/sensors/"
 const routeSensorAnomalyOutlier = "POST /sim/sensors/{sensorId}/anomaly/outlier"
-const pathSensor5AnomalyOutlier = "/sim/sensors/5/anomaly/outlier"
+const pathSensor5AnomalyOutlier = pathSimSensors + testSensorUUIDStr + "/anomaly/outlier"
 
 // Helpers.
 func jsonBody(t *testing.T, v any) *bytes.Reader {
@@ -110,6 +112,40 @@ func TestGatewayHandlerCreateServiceError500(t *testing.T) {
 
 	if w.Code < 400 {
 		t.Errorf(wantServiceErrMin400Msg, w.Code)
+	}
+}
+
+func TestGatewayHandlerCreateAlreadyProvisioned409(t *testing.T) {
+	lc := &fakes.FakeGatewayLifecycleService{
+		CreateAndStartFn: func(_ context.Context, _ domain.CreateGatewayRequest) (*domain.SimGateway, error) {
+			return nil, domain.ErrGatewayAlreadyProvisioned
+		},
+	}
+	h := simhttp.NewGatewayHandler(lc)
+
+	req := newReq(http.MethodPost, simHelper, jsonBody(t, domain.CreateGatewayRequest{}))
+	w := httptest.NewRecorder()
+	h.Create(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("want 409, got %d", w.Code)
+	}
+}
+
+func TestGatewayHandlerCreateInvalidFactoryCredentials401(t *testing.T) {
+	lc := &fakes.FakeGatewayLifecycleService{
+		CreateAndStartFn: func(_ context.Context, _ domain.CreateGatewayRequest) (*domain.SimGateway, error) {
+			return nil, domain.ErrInvalidFactoryCredentials
+		},
+	}
+	h := simhttp.NewGatewayHandler(lc)
+
+	req := newReq(http.MethodPost, simHelper, jsonBody(t, domain.CreateGatewayRequest{}))
+	w := httptest.NewRecorder()
+	h.Create(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("want 401, got %d", w.Code)
 	}
 }
 
@@ -230,17 +266,16 @@ func TestGatewayHandlerBulkCreate201(t *testing.T) {
 // SensorHandler.
 func TestSensorHandlerAdd201(t *testing.T) {
 	svc := &fakes.FakeSensorManagementService{
-		AddSensorFn: func(_ context.Context, gwID int64, s domain.SimSensor) (*domain.SimSensor, error) {
-			s.ID = 10
+		AddSensorFn: func(_ context.Context, gwID uuid.UUID, s domain.SimSensor) (*domain.SimSensor, error) {
 			s.SensorID = uuid.New()
+			s.ManagementGatewayID = gwID
 			return &s, nil
 		},
 	}
 	h := simhttp.NewSensorHandler(svc)
-	gwID := int64(1)
 
 	w := serveWithMux(routeGatewaySensorsAdd, h.Add,
-		newReq(http.MethodPost, simHelper2+strconv.FormatInt(gwID, 10)+"/sensors",
+		newReq(http.MethodPost, simHelper2+testGatewayUUIDStr+"/sensors",
 			jsonBody(t, domain.SimSensor{Type: domain.Temperature, MinRange: 0, MaxRange: 100, Algorithm: domain.UniformRandom})))
 	if w.Code != http.StatusCreated {
 		t.Errorf("want 201, got %d", w.Code)
@@ -250,7 +285,7 @@ func TestSensorHandlerAdd201(t *testing.T) {
 func TestSensorHandlerAddInvalidGatewayID400(t *testing.T) {
 	h := simhttp.NewSensorHandler(&fakes.FakeSensorManagementService{})
 	w := serveWithMux(routeGatewaySensorsAdd, h.Add,
-		newReq(http.MethodPost, "/sim/gateways/not-a-number/sensors",
+		newReq(http.MethodPost, "/sim/gateways/not-a-uuid/sensors",
 			jsonBody(t, domain.SimSensor{})))
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("want 400 for invalid gateway ID, got %d", w.Code)
@@ -259,8 +294,8 @@ func TestSensorHandlerAddInvalidGatewayID400(t *testing.T) {
 
 func TestSensorHandlerList200(t *testing.T) {
 	svc := &fakes.FakeSensorManagementService{
-		ListSensorsFn: func(_ context.Context, gwID int64) ([]*domain.SimSensor, error) {
-			return []*domain.SimSensor{{ID: 1}, {ID: 2}}, nil
+		ListSensorsFn: func(_ context.Context, gwID uuid.UUID) ([]*domain.SimSensor, error) {
+			return []*domain.SimSensor{{SensorID: uuid.New()}, {SensorID: uuid.New()}}, nil
 		},
 	}
 	h := simhttp.NewSensorHandler(svc)
@@ -274,12 +309,12 @@ func TestSensorHandlerList200(t *testing.T) {
 
 func TestSensorHandlerDelete204(t *testing.T) {
 	svc := &fakes.FakeSensorManagementService{
-		DeleteSensorFn: func(_ context.Context, sensorID int64) error { return nil },
+		DeleteSensorFn: func(_ context.Context, sensorID uuid.UUID) error { return nil },
 	}
 	h := simhttp.NewSensorHandler(svc)
 
 	w := serveWithMux(routeDeleteSensorByID, h.Delete,
-		newReq(http.MethodDelete, "/sim/sensors/5", nil))
+		newReq(http.MethodDelete, pathSimSensors+testSensorUUIDStr, nil))
 	if w.Code != http.StatusNoContent {
 		t.Errorf(want204Msg, w.Code)
 	}
@@ -287,12 +322,12 @@ func TestSensorHandlerDelete204(t *testing.T) {
 
 func TestSensorHandlerDeleteServiceError(t *testing.T) {
 	svc := &fakes.FakeSensorManagementService{
-		DeleteSensorFn: func(_ context.Context, _ int64) error { return fakes.ErrSimulated },
+		DeleteSensorFn: func(_ context.Context, _ uuid.UUID) error { return fakes.ErrSimulated },
 	}
 	h := simhttp.NewSensorHandler(svc)
 
 	w := serveWithMux(routeDeleteSensorByID, h.Delete,
-		newReq(http.MethodDelete, "/sim/sensors/5", nil))
+		newReq(http.MethodDelete, pathSimSensors+testSensorUUIDStr, nil))
 	if w.Code < 400 {
 		t.Errorf(wantServiceErrMin400Msg, w.Code)
 	}
@@ -337,7 +372,7 @@ func TestAnomalyHandlerDisconnect204(t *testing.T) {
 
 func TestAnomalyHandlerOutlier204(t *testing.T) {
 	ctrl := &fakes.FakeSimulatorControlService{
-		InjectSensorOutlierFn: func(_ context.Context, _ int64, _ *float64) error {
+		InjectSensorOutlierFn: func(_ context.Context, _ uuid.UUID, _ *float64) error {
 			return nil
 		},
 	}
@@ -345,7 +380,7 @@ func TestAnomalyHandlerOutlier204(t *testing.T) {
 
 	val := 999.9
 	w := serveWithMux(routeSensorAnomalyOutlier, h.InjectOutlier,
-		newReq(http.MethodPost, "/sim/sensors/3/anomaly/outlier",
+		newReq(http.MethodPost, pathSimSensors+testSensorUUIDStr+"/anomaly/outlier",
 			jsonBody(t, map[string]any{"value": val})))
 	if w.Code != http.StatusNoContent {
 		t.Errorf(want204Msg, w.Code)
@@ -530,7 +565,7 @@ func TestSensorHandlerAddBadBody400(t *testing.T) {
 
 func TestSensorHandlerAddServiceError500(t *testing.T) {
 	svc := &fakes.FakeSensorManagementService{
-		AddSensorFn: func(_ context.Context, _ int64, _ domain.SimSensor) (*domain.SimSensor, error) {
+		AddSensorFn: func(_ context.Context, _ uuid.UUID, _ domain.SimSensor) (*domain.SimSensor, error) {
 			return nil, fakes.ErrSimulated
 		},
 	}
@@ -546,7 +581,7 @@ func TestSensorHandlerAddServiceError500(t *testing.T) {
 func TestSensorHandlerListInvalidGatewayID400(t *testing.T) {
 	h := simhttp.NewSensorHandler(&fakes.FakeSensorManagementService{})
 	w := serveWithMux(routeGatewaySensorsList, h.List,
-		newReq(http.MethodGet, "/sim/gateways/not-a-number/sensors", nil))
+		newReq(http.MethodGet, "/sim/gateways/not-a-uuid/sensors", nil))
 	if w.Code != http.StatusBadRequest {
 		t.Errorf(want400Msg, w.Code)
 	}
@@ -554,7 +589,7 @@ func TestSensorHandlerListInvalidGatewayID400(t *testing.T) {
 
 func TestSensorHandlerListServiceError500(t *testing.T) {
 	svc := &fakes.FakeSensorManagementService{
-		ListSensorsFn: func(_ context.Context, _ int64) ([]*domain.SimSensor, error) {
+		ListSensorsFn: func(_ context.Context, _ uuid.UUID) ([]*domain.SimSensor, error) {
 			return nil, fakes.ErrSimulated
 		},
 	}
@@ -569,7 +604,7 @@ func TestSensorHandlerListServiceError500(t *testing.T) {
 func TestSensorHandlerDeleteInvalidSensorID400(t *testing.T) {
 	h := simhttp.NewSensorHandler(&fakes.FakeSensorManagementService{})
 	w := serveWithMux(routeDeleteSensorByID, h.Delete,
-		newReq(http.MethodDelete, "/sim/sensors/not-a-number", nil))
+		newReq(http.MethodDelete, pathSimSensors+"not-a-uuid", nil))
 	if w.Code != http.StatusBadRequest {
 		t.Errorf(want400Msg, w.Code)
 	}
@@ -652,14 +687,14 @@ func TestAnomalyHandlerDisconnectZeroDuration400(t *testing.T) {
 
 func TestAnomalyHandlerOutlierSensorNotFound404(t *testing.T) {
 	ctrl := &fakes.FakeSimulatorControlService{
-		InjectSensorOutlierFn: func(_ context.Context, _ int64, _ *float64) error {
+		InjectSensorOutlierFn: func(_ context.Context, _ uuid.UUID, _ *float64) error {
 			return domain.ErrSensorNotFound
 		},
 	}
 	h := simhttp.NewAnomalyHandler(ctrl)
 
 	w := serveWithMux(routeSensorAnomalyOutlier, h.InjectOutlier,
-		newReq(http.MethodPost, "/sim/sensors/99/anomaly/outlier",
+		newReq(http.MethodPost, pathSensor5AnomalyOutlier,
 			jsonBody(t, map[string]any{})))
 	if w.Code != http.StatusNotFound {
 		t.Errorf("want 404 for missing sensor, got %d", w.Code)
@@ -668,7 +703,7 @@ func TestAnomalyHandlerOutlierSensorNotFound404(t *testing.T) {
 
 func TestAnomalyHandlerOutlierGatewayNotFound404(t *testing.T) {
 	ctrl := &fakes.FakeSimulatorControlService{
-		InjectSensorOutlierFn: func(_ context.Context, _ int64, _ *float64) error {
+		InjectSensorOutlierFn: func(_ context.Context, _ uuid.UUID, _ *float64) error {
 			return domain.ErrGatewayNotFound
 		},
 	}
@@ -684,7 +719,7 @@ func TestAnomalyHandlerOutlierGatewayNotFound404(t *testing.T) {
 
 func TestAnomalyHandlerOutlierServiceError500(t *testing.T) {
 	ctrl := &fakes.FakeSimulatorControlService{
-		InjectSensorOutlierFn: func(_ context.Context, _ int64, _ *float64) error {
+		InjectSensorOutlierFn: func(_ context.Context, _ uuid.UUID, _ *float64) error {
 			return fakes.ErrSimulated
 		},
 	}

@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	simhttp "github.com/NoTIPswe/notip-simulator-backend/internal/adapters/http"
+	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
 )
 
 const (
@@ -81,6 +83,38 @@ func TestProvisioningClientOnboardServerError(t *testing.T) {
 	}
 }
 
+func TestProvisioningClientOnboardAlreadyProvisionedConflict(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "already provisioned", http.StatusConflict)
+	}))
+	defer srv.Close()
+
+	client := simhttp.NewProvisioningServiceClient(srv.URL)
+	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, testFWVersion)
+	if err == nil {
+		t.Fatal("expected error on 409, got nil")
+	}
+	if !errors.Is(err, domain.ErrGatewayAlreadyProvisioned) {
+		t.Fatalf("expected ErrGatewayAlreadyProvisioned, got: %v", err)
+	}
+}
+
+func TestProvisioningClientOnboardInvalidFactoryCredentialsUnauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	client := simhttp.NewProvisioningServiceClient(srv.URL)
+	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, testFWVersion)
+	if err == nil {
+		t.Fatal("expected error on 401, got nil")
+	}
+	if !errors.Is(err, domain.ErrInvalidFactoryCredentials) {
+		t.Fatalf("expected ErrInvalidFactoryCredentials, got: %v", err)
+	}
+}
+
 func TestProvisioningClientOnboardInvalidAESKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(headerContentType, contentTypeJSON)
@@ -144,5 +178,28 @@ func TestProvisioningClientOnboardInvalidBase64Key(t *testing.T) {
 	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, testFWVersion)
 	if err == nil {
 		t.Error("expected error for invalid base64, got nil")
+	}
+}
+
+func TestProvisioningClientOnboardCreatedAccepted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"certPem": "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----",
+			"aesKey":  makeValidAESKey(),
+			"identity": map[string]string{
+				"gatewayId": testGatewayID,
+				"tenantId":  testTenantID,
+			},
+			"sendFrequencyMs": 100,
+		})
+	}))
+	defer srv.Close()
+
+	client := simhttp.NewProvisioningServiceClient(srv.URL)
+	_, err := client.Onboard(context.Background(), "fid", "fkey", 100, testFWVersion)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

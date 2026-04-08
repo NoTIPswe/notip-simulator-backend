@@ -7,7 +7,10 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/config"
 )
 
-const unexpectedErrorMsg = "unexpected error: %v"
+const (
+	unexpectedErrorMsg = "unexpected error: %v"
+	errFallback5000    = "expected fallback 5000, got %d"
+)
 
 func setEnv(t *testing.T, pairs ...string) {
 	t.Helper()
@@ -89,6 +92,28 @@ func TestLoadMissingCACertPathReturnsError(t *testing.T) {
 	}
 }
 
+func TestLoadTLSClientCertWithoutKeyReturnsError(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("NATS_TLS_CERT", "/certs/client.pem")
+	_ = os.Unsetenv("NATS_TLS_KEY")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error when NATS_TLS_CERT is set without NATS_TLS_KEY")
+	}
+}
+
+func TestLoadTLSClientKeyWithoutCertReturnsError(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("NATS_TLS_KEY", "/certs/client.key")
+	_ = os.Unsetenv("NATS_TLS_CERT")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error when NATS_TLS_KEY is set without NATS_TLS_CERT")
+	}
+}
+
 func TestLoadRecoveryModeDefaultFalse(t *testing.T) {
 	requiredEnv(t)
 	cfg, err := config.Load()
@@ -144,7 +169,7 @@ func TestLoadInvalidSendFrequencyUsesFallback(t *testing.T) {
 		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.DefaultSendFrequencyMs != 5000 {
-		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+		t.Errorf(errFallback5000, cfg.DefaultSendFrequencyMs)
 	}
 }
 
@@ -156,7 +181,7 @@ func TestLoadNegativeSendFrequencyUsesFallback(t *testing.T) {
 		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.DefaultSendFrequencyMs != 5000 {
-		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+		t.Errorf(errFallback5000, cfg.DefaultSendFrequencyMs)
 	}
 }
 
@@ -169,5 +194,41 @@ func TestLoadInvalidBufferSizeUsesFallback(t *testing.T) {
 	}
 	if cfg.GatewayBufferSize != 1000 {
 		t.Errorf("expected fallback 1000, got %d", cfg.GatewayBufferSize)
+	}
+}
+
+func TestLoadInvalidSendFrequencyStringUsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("DEFAULT_SEND_FREQUENCY_MS", "not-a-number")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+	if cfg.DefaultSendFrequencyMs != 5000 {
+		t.Errorf(errFallback5000, cfg.DefaultSendFrequencyMs)
+	}
+}
+
+func TestLoadInvalidBufferSizeStringUsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("GATEWAY_BUFFER_SIZE", "not-a-number")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+	if cfg.GatewayBufferSize != 1000 {
+		t.Errorf("expected fallback 1000, got %d", cfg.GatewayBufferSize)
+	}
+}
+
+func TestLoadInvalidRecoveryModeStringUsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("RECOVERY_MODE", "not-a-bool")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+	if cfg.RecoveryMode {
+		t.Error("expected RecoveryMode fallback to be false")
 	}
 }

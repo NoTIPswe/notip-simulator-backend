@@ -16,7 +16,7 @@ import (
 
 // TestGatewayConnector_MTLSConnects_VerificaTLSSuccesso verifies the encrypted TLS transmission requirement.
 // It uses on-the-fly certificates to connect to a secured NATS broker.
-func TestGatewayConnector_MTLSConnects_VerificaTLSSuccesso(t *testing.T) {
+func TestGatewayConnectorMTLSConnectsVerificaTLSSuccesso(t *testing.T) {
 	// Start the NATS container with forced mTLS.
 	env := setupSecureNATS(t)
 	ctx := context.Background()
@@ -39,7 +39,7 @@ func TestGatewayConnector_MTLSConnects_VerificaTLSSuccesso(t *testing.T) {
 	nc.Close()
 
 	// Instantiate the production NATS connector.
-	connector, err := natsadapter.NewNATSMTLSConnector(env.URI, env.Certs.CACert, adapters.SystemClock{})
+	connector, err := natsadapter.NewNATSMTLSConnector(env.URI, env.Certs.CACert, "", "", adapters.SystemClock{})
 	require.NoError(t, err)
 
 	tenantID := "tenant-tls-1"
@@ -63,12 +63,12 @@ func TestGatewayConnector_MTLSConnects_VerificaTLSSuccesso(t *testing.T) {
 }
 
 // TestGatewayConnector_PlaintextRejected_VerificaRifiutoSenzaTLS demonstrates that the broker rejects unencrypted communications.
-func TestGatewayConnector_PlaintextRejected_VerificaRifiutoSenzaTLS(t *testing.T) {
+func TestGatewayConnectorPlaintextRejectedVerificaRifiutoSenzaTLS(t *testing.T) {
 	env := setupSecureNATS(t)
 	ctx := context.Background()
 
 	// Instantiate the production NATS connector.
-	connector, err := natsadapter.NewNATSMTLSConnector(env.URI, env.Certs.CACert, adapters.SystemClock{})
+	connector, err := natsadapter.NewNATSMTLSConnector(env.URI, env.Certs.CACert, "", "", adapters.SystemClock{})
 	require.NoError(t, err)
 
 	tenantID := "tenant-tls-2"
@@ -85,4 +85,64 @@ func TestGatewayConnector_PlaintextRejected_VerificaRifiutoSenzaTLS(t *testing.T
 
 	// The test must fail because the NATS server requires TLS.
 	require.Error(t, err, "Connection must be rejected due to missing TLS certificates.")
+}
+
+// TestGatewayConnector_StaticMTLSConnects verifies static file-based mTLS mode.
+func TestGatewayConnectorStaticMTLSConnects(t *testing.T) {
+	env := setupSecureNATS(t)
+	ctx := context.Background()
+
+	nc, err := nats.Connect(
+		env.URI,
+		nats.RootCAs(env.Certs.CACert),
+		nats.ClientCert(env.Certs.ClientCert, env.Certs.ClientKey),
+	)
+	require.NoError(t, err)
+	js, err := nc.JetStream()
+	require.NoError(t, err)
+
+	_, err = js.AddStream(&nats.StreamConfig{
+		Name:     "TEST_COMMANDS_STATIC",
+		Subjects: []string{"command.gw.>"},
+	})
+	require.NoError(t, err)
+	nc.Close()
+
+	connector, err := natsadapter.NewNATSMTLSConnector(
+		env.URI,
+		env.Certs.CACert,
+		env.Certs.ClientCert,
+		env.Certs.ClientKey,
+		adapters.SystemClock{},
+	)
+	require.NoError(t, err)
+
+	pub, sub, closeFn, err := connector.Connect(
+		ctx,
+		nil,
+		nil,
+		"tenant-tls-static",
+		uuid.New(),
+	)
+
+	require.NoError(t, err, "TLS connection must succeed with static certificate files.")
+	require.NotNil(t, pub)
+	require.NotNil(t, sub)
+	t.Cleanup(func() { _ = closeFn() })
+}
+
+// TestGatewayConnector_StaticMTLSMissingFile verifies constructor error handling for missing static cert files.
+func TestGatewayConnectorStaticMTLSMissingFile(t *testing.T) {
+	certs, err := generateCerts(t.TempDir(), nil)
+	require.NoError(t, err)
+
+	_, err = natsadapter.NewNATSMTLSConnector(
+		"tls://127.0.0.1:4222",
+		certs.CACert,
+		"/tmp/notip-missing-client-cert.pem",
+		"/tmp/notip-missing-client-key.pem",
+		adapters.SystemClock{},
+	)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "read static client certificate")
 }

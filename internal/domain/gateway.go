@@ -53,7 +53,6 @@ type TelemetryEnvelope struct {
 type CreateGatewayRequest struct {
 	FactoryID       string `json:"factoryId"`
 	FactoryKey      string `json:"factoryKey"`
-	SerialNumber    string `json:"serialNumber"`
 	Model           string `json:"model"`
 	FirmwareVersion string `json:"firmwareVersion"`
 	SendFrequencyMs int    `json:"sendFrequencyMs"`
@@ -114,7 +113,6 @@ type SimGateway struct {
 	ManagementGatewayID uuid.UUID
 	FactoryID           string
 	FactoryKey          string
-	SerialNumber        string
 	Model               string
 	FirmwareVersion     string
 	Provisioned         bool
@@ -128,15 +126,17 @@ type SimGateway struct {
 }
 
 // SimSensor is the sensor domain entity. No JSON tags.
+// ID and GatewayID are internal SQLite keys; ManagementGatewayID and SensorID are the public UUIDs.
 type SimSensor struct {
-	ID        int64
-	GatewayID int64
-	SensorID  uuid.UUID
-	Type      SensorType
-	MinRange  float64
-	MaxRange  float64
-	Algorithm GenerationAlgorithmType
-	CreatedAt time.Time
+	ID                  int64
+	GatewayID           int64     // internal SQLite FK, not exposed via HTTP
+	ManagementGatewayID uuid.UUID // populated at service layer, not persisted
+	SensorID            uuid.UUID
+	Type                SensorType
+	MinRange            float64
+	MaxRange            float64
+	Algorithm           GenerationAlgorithmType
+	CreatedAt           time.Time
 }
 
 // GatewayConfigUpdate carries live configuration changes from NATS commands or HTTP PATCH.
@@ -181,26 +181,26 @@ const (
 )
 
 type CommandConfigPayload struct {
-	SendFrequencyMs *int           `json:"sendFrequencyMs,omitempty"`
+	SendFrequencyMs *int           `json:"send_frequency_ms,omitempty"`
 	Status          *GatewayStatus `json:"status,omitempty"`
 }
 
 type CommandFirmwarePayload struct {
-	FirmwareVersion string `json:"firmwareVersion"`
-	DownloadURL     string `json:"downloadUrl"`
+	FirmwareVersion string `json:"firmware_version"`
+	DownloadURL     string `json:"download_url"`
 }
 
 // IncomingCommand is deserialized from NATS JetStream messages.
 // Payload is a raw JSON object; the worker decodes it based on Type.
 type IncomingCommand struct {
-	CommandID string          `json:"commandId"`
+	CommandID string          `json:"command_id"`
 	Type      CommandType     `json:"type"`
 	Payload   json.RawMessage `json:"payload"`
-	IssuedAt  time.Time       `json:"issuedAt"`
+	IssuedAt  time.Time       `json:"issued_at"`
 }
 
 type CommandACK struct {
-	CommandID string           `json:"commandId"`
+	CommandID string           `json:"command_id"`
 	Status    CommandACKStatus `json:"status"`
 	Message   *string          `json:"message,omitempty"`
 	Timestamp time.Time        `json:"timestamp"`
