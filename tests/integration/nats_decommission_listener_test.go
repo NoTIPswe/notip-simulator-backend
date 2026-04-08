@@ -79,6 +79,7 @@ func setupJetStream(t *testing.T, natsURI string) (*nats.Conn, nats.JetStreamCon
 		require.True(t, strings.Contains(errStr, "already exists") || strings.Contains(errStr, "overlap"),
 			"unexpected stream creation error: %v", err)
 	}
+	t.Cleanup(func() { _ = js.DeleteStream("GATEWAY_EVENTS") })
 
 	return nc, js
 }
@@ -177,6 +178,7 @@ func TestNATSDecommissionListenerInvalidSubjectTooFewPartsIgnored(t *testing.T) 
 		require.True(t, strings.Contains(errStr, "already exists") || strings.Contains(errStr, "overlap"),
 			"unexpected stream creation error: %v", err)
 	}
+	t.Cleanup(func() { _ = js.DeleteStream("GATEWAY_EVENTS_BAD") })
 
 	receiver := &fakeDecommissionReceiver{}
 	listener := natsadapter.NewNATSDecommissionListener(js, receiver)

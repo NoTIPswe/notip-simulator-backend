@@ -193,3 +193,39 @@ func TestLoadInvalidBufferSizeUsesFallback(t *testing.T) {
 		t.Errorf("expected fallback 1000, got %d", cfg.GatewayBufferSize)
 	}
 }
+
+func TestLoadInvalidSendFrequencyStringUsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("DEFAULT_SEND_FREQUENCY_MS", "not-a-number")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+	if cfg.DefaultSendFrequencyMs != 5000 {
+		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+	}
+}
+
+func TestLoadInvalidBufferSizeStringUsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("GATEWAY_BUFFER_SIZE", "not-a-number")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+	if cfg.GatewayBufferSize != 1000 {
+		t.Errorf("expected fallback 1000, got %d", cfg.GatewayBufferSize)
+	}
+}
+
+func TestLoadInvalidRecoveryModeStringUsesFallback(t *testing.T) {
+	requiredEnv(t)
+	t.Setenv("RECOVERY_MODE", "not-a-bool")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf(unexpectedErrorMsg, err)
+	}
+	if cfg.RecoveryMode {
+		t.Error("expected RecoveryMode fallback to be false")
+	}
+}

@@ -23,7 +23,7 @@ func makeSensor(algo domain.GenerationAlgorithmType, min, max float64) *domain.S
 
 //UniformRandom.
 
-func TestUniformRandom_InRange(t *testing.T) {
+func TestUniformRandomInRange(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.UniformRandom, 10, 20), clk)
@@ -36,7 +36,7 @@ func TestUniformRandom_InRange(t *testing.T) {
 	}
 }
 
-func TestUniformRandom_InjectOutlier_ConsumedOnce(t *testing.T) {
+func TestUniformRandomInjectOutlierConsumedOnce(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.UniformRandom, 0, 1), clk)
@@ -54,7 +54,7 @@ func TestUniformRandom_InjectOutlier_ConsumedOnce(t *testing.T) {
 	}
 }
 
-func TestUniformRandom_ValuesAreNotAllIdentical(t *testing.T) {
+func TestUniformRandomValuesAreNotAllIdentical(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.UniformRandom, 0, 100), clk)
@@ -70,7 +70,7 @@ func TestUniformRandom_ValuesAreNotAllIdentical(t *testing.T) {
 
 //SineWave.
 
-func TestSineWave_InRange(t *testing.T) {
+func TestSineWaveInRange(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.SineWave, 0, 100), clk)
@@ -84,7 +84,7 @@ func TestSineWave_InRange(t *testing.T) {
 	}
 }
 
-func TestSineWave_Oscillates(t *testing.T) {
+func TestSineWaveOscillates(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.SineWave, 0, 100), clk)
@@ -106,7 +106,7 @@ func TestSineWave_Oscillates(t *testing.T) {
 	}
 }
 
-func TestSineWave_InjectOutlier(t *testing.T) {
+func TestSineWaveInjectOutlier(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.SineWave, 0, 100), clk)
@@ -120,7 +120,7 @@ func TestSineWave_InjectOutlier(t *testing.T) {
 
 //Spike.
 
-func TestSpike_MostlyInRange(t *testing.T) {
+func TestSpikeMostlyInRange(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.Spike, 0, 100), clk)
@@ -140,7 +140,7 @@ func TestSpike_MostlyInRange(t *testing.T) {
 	}
 }
 
-func TestSpike_InjectOutlier(t *testing.T) {
+func TestSpikeInjectOutlier(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.Spike, 0, 100), clk)
@@ -152,7 +152,7 @@ func TestSpike_InjectOutlier(t *testing.T) {
 	}
 }
 
-func TestSpike_ProducesSomeSpikedValues(t *testing.T) {
+func TestSpikeProducesSomeSpikedValues(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.Spike, 0, 10), clk)
@@ -170,9 +170,30 @@ func TestSpike_ProducesSomeSpikedValues(t *testing.T) {
 	}
 }
 
+// SineWave direct constructor.
+
+func TestSineWaveGeneratorZeroPeriodDefaultsToSixty(t *testing.T) {
+	clk := fakes.NewFakeClock(time.Now())
+	g := generator.NewSineWaveGenerator(0, 100, 0, clk)
+	// With period defaulted to 60 the value must still be in range.
+	v := g.Next()
+	if v < 0 || v > 100 {
+		t.Errorf("value %.4f out of range [0, 100] with default period", v)
+	}
+}
+
+func TestSineWaveGeneratorNegativePeriodDefaultsToSixty(t *testing.T) {
+	clk := fakes.NewFakeClock(time.Now())
+	g := generator.NewSineWaveGenerator(0, 100, -5, clk)
+	v := g.Next()
+	if v < 0 || v > 100 {
+		t.Errorf("value %.4f out of range [0, 100] with default period", v)
+	}
+}
+
 //Constant.
 
-func TestConstant_AlwaysReturnsSameValue(t *testing.T) {
+func TestConstantAlwaysReturnsSameValue(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.Constant, 0, 100), clk)
@@ -186,7 +207,7 @@ func TestConstant_AlwaysReturnsSameValue(t *testing.T) {
 	}
 }
 
-func TestConstant_InjectOutlier_ThenReturnsConstant(t *testing.T) {
+func TestConstantInjectOutlierThenReturnsConstant(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	g := factory.New(makeSensor(domain.Constant, 42, 42), clk)
@@ -205,7 +226,7 @@ func TestConstant_InjectOutlier_ThenReturnsConstant(t *testing.T) {
 
 //GeneratorFactory.
 
-func TestFactory_AllAlgorithms_ReturnNonNil(t *testing.T) {
+func TestFactoryAllAlgorithmsReturnNonNil(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Now())
 	factory := generator.NewGeneratorFactory()
 	algos := []domain.GenerationAlgorithmType{
@@ -222,7 +243,7 @@ func TestFactory_AllAlgorithms_ReturnNonNil(t *testing.T) {
 	}
 }
 
-func TestFactory_EachAlgorithm_ProducesValues(t *testing.T) {
+func TestFactoryEachAlgorithmProducesValues(t *testing.T) {
 	clk := fakes.NewFakeClock(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
 	factory := generator.NewGeneratorFactory()
 

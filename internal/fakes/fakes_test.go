@@ -319,6 +319,210 @@ func TestFakeSimulatorControlServiceDefaultsAndCallbacks(t *testing.T) {
 	}
 }
 
+func TestFakeGatewayStoreGetSensorBySensorID(t *testing.T) {
+	s := NewFakeGatewayStore()
+	ctx := context.Background()
+
+	gwID, _ := s.CreateGateway(ctx, domain.SimGateway{ManagementGatewayID: uuid.New()})
+	sensorID := uuid.New()
+	sid, _ := s.CreateSensor(ctx, domain.SimSensor{GatewayID: gwID, SensorID: sensorID})
+	_ = sid
+
+	found, err := s.GetSensorBySensorID(ctx, sensorID)
+	if err != nil {
+		t.Fatalf("expected sensor, got error: %v", err)
+	}
+	if found.SensorID != sensorID {
+		t.Errorf("want %s, got %s", sensorID, found.SensorID)
+	}
+
+	// Not found.
+	_, err = s.GetSensorBySensorID(ctx, uuid.New())
+	if err == nil {
+		t.Fatal("expected error for missing sensor")
+	}
+
+	// Error override.
+	s.ErrGetSensorBySensorID = ErrSimulated
+	_, err = s.GetSensorBySensorID(ctx, sensorID)
+	if err == nil {
+		t.Fatal("expected simulated error")
+	}
+}
+
+func TestFakeGatewayStoreNotFoundPaths(t *testing.T) {
+	s := NewFakeGatewayStore()
+	ctx := context.Background()
+
+	// GetGatewayByManagementID — not found.
+	_, err := s.GetGatewayByManagementID(ctx, uuid.New())
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+
+	// UpdateProvisioned — not found.
+	if err := s.UpdateProvisioned(ctx, 999, domain.ProvisionResult{}); err == nil {
+		t.Fatal("expected not-found error for UpdateProvisioned")
+	}
+
+	// UpdateStatus — not found.
+	if err := s.UpdateStatus(ctx, 999, domain.Online); err == nil {
+		t.Fatal("expected not-found error for UpdateStatus")
+	}
+
+	// UpdateFirmwareVersion — not found.
+	if err := s.UpdateFirmwareVersion(ctx, 999, "2.0.0"); err == nil {
+		t.Fatal("expected not-found error for UpdateFirmwareVersion")
+	}
+
+	// GetSensor — not found.
+	if _, err := s.GetSensor(ctx, 999); err == nil {
+		t.Fatal("expected not-found error for GetSensor")
+	}
+
+	// ListSensors — error override.
+	s.ErrListSensors = ErrSimulated
+	if _, err := s.ListSensors(ctx, 1); err == nil {
+		t.Fatal("expected simulated error for ListSensors")
+	}
+	s.ErrListSensors = nil
+
+	// DeleteSensor — error override.
+	s.ErrDeleteSensor = ErrSimulated
+	if err := s.DeleteSensor(ctx, 1); err == nil {
+		t.Fatal("expected simulated error for DeleteSensor")
+	}
+	s.ErrDeleteSensor = nil
+
+	// CreateSensor — error override.
+	s.ErrCreateSensor = ErrSimulated
+	if _, err := s.CreateSensor(ctx, domain.SimSensor{}); err == nil {
+		t.Fatal("expected simulated error for CreateSensor")
+	}
+}
+
+func TestFakeGatewayLifecycleServiceFnCallbacks(t *testing.T) {
+	ctx := context.Background()
+
+	// CreateAndStart with Fn.
+	svc := &FakeGatewayLifecycleService{}
+	called := false
+	svc.CreateAndStartFn = func(context.Context, domain.CreateGatewayRequest) (*domain.SimGateway, error) {
+		called = true
+		return &domain.SimGateway{}, nil
+	}
+	if _, err := svc.CreateAndStart(ctx, domain.CreateGatewayRequest{}); err != nil || !called {
+		t.Fatal("CreateAndStartFn not called")
+	}
+
+	// BulkCreateGateways — default (no Fn).
+	svc2 := &FakeGatewayLifecycleService{}
+	gws, errs := svc2.BulkCreateGateways(ctx, domain.BulkCreateRequest{})
+	if gws != nil || errs != nil {
+		t.Fatal("default BulkCreateGateways should return nil, nil")
+	}
+
+	// BulkCreateGateways with Fn.
+	called = false
+	svc2.BulkCreateGatewaysFn = func(context.Context, domain.BulkCreateRequest) ([]*domain.SimGateway, []error) {
+		called = true
+		return []*domain.SimGateway{{}}, nil
+	}
+	if result, _ := svc2.BulkCreateGateways(ctx, domain.BulkCreateRequest{}); !called || len(result) != 1 {
+		t.Fatal("BulkCreateGatewaysFn not called")
+	}
+
+	// Stop with Fn.
+	svc3 := &FakeGatewayLifecycleService{}
+	called = false
+	svc3.StopFn = func(context.Context, uuid.UUID) error { called = true; return nil }
+	if err := svc3.Stop(ctx, uuid.New()); err != nil || !called {
+		t.Fatal("StopFn not called")
+	}
+
+	// Delete with Fn.
+	svc4 := &FakeGatewayLifecycleService{}
+	called = false
+	svc4.DeleteFn = func(context.Context, uuid.UUID) error { called = true; return nil }
+	if err := svc4.Delete(ctx, uuid.New()); err != nil || !called {
+		t.Fatal("DeleteFn not called")
+	}
+
+	// ListGateways with Fn.
+	svc5 := &FakeGatewayLifecycleService{}
+	called = false
+	svc5.ListGatewaysFn = func(context.Context) ([]*domain.SimGateway, error) {
+		called = true
+		return []*domain.SimGateway{{}}, nil
+	}
+	if list, _ := svc5.ListGateways(ctx); !called || len(list) != 1 {
+		t.Fatal("ListGatewaysFn not called")
+	}
+
+	// GetGateway with Fn.
+	svc6 := &FakeGatewayLifecycleService{}
+	called = false
+	svc6.GetGatewayFn = func(context.Context, uuid.UUID) (*domain.SimGateway, error) {
+		called = true
+		return &domain.SimGateway{}, nil
+	}
+	if _, err := svc6.GetGateway(ctx, uuid.New()); err != nil || !called {
+		t.Fatal("GetGatewayFn not called")
+	}
+}
+
+func TestFakeSensorManagementServiceFnCallbacks(t *testing.T) {
+	ctx := context.Background()
+
+	// AddSensor with Fn.
+	svc := &FakeSensorManagementService{}
+	called := false
+	svc.AddSensorFn = func(context.Context, uuid.UUID, domain.SimSensor) (*domain.SimSensor, error) {
+		called = true
+		return &domain.SimSensor{}, nil
+	}
+	if _, err := svc.AddSensor(ctx, uuid.New(), domain.SimSensor{}); err != nil || !called {
+		t.Fatal("AddSensorFn not called")
+	}
+
+	// ListSensors with Fn.
+	svc2 := &FakeSensorManagementService{}
+	called = false
+	svc2.ListSensorsFn = func(context.Context, uuid.UUID) ([]*domain.SimSensor, error) {
+		called = true
+		return []*domain.SimSensor{{}}, nil
+	}
+	if list, _ := svc2.ListSensors(ctx, uuid.New()); !called || len(list) != 1 {
+		t.Fatal("ListSensorsFn not called")
+	}
+}
+
+func TestFakeSimulatorControlServiceFnCallbacks(t *testing.T) {
+	ctx := context.Background()
+
+	// UpdateConfig with Fn.
+	svc := &FakeSimulatorControlService{}
+	called := false
+	svc.UpdateConfigFn = func(context.Context, uuid.UUID, domain.GatewayConfigUpdate) error {
+		called = true
+		return nil
+	}
+	if err := svc.UpdateConfig(ctx, uuid.New(), domain.GatewayConfigUpdate{}); err != nil || !called {
+		t.Fatal("UpdateConfigFn not called")
+	}
+
+	// InjectGatewayAnomaly with Fn.
+	svc2 := &FakeSimulatorControlService{}
+	called = false
+	svc2.InjectGatewayAnomalyFn = func(context.Context, uuid.UUID, domain.GatewayAnomalyCommand) error {
+		called = true
+		return nil
+	}
+	if err := svc2.InjectGatewayAnomaly(ctx, uuid.New(), domain.GatewayAnomalyCommand{}); err != nil || !called {
+		t.Fatal("InjectGatewayAnomalyFn not called")
+	}
+}
+
 func TestFakeDecommissionEventReceiverCollectsCalls(t *testing.T) {
 	r := &FakeDecommissionEventReceiver{}
 	r.HandleDecommission("tenant", "gateway")

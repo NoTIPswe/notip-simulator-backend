@@ -53,6 +53,17 @@ func TestDecommissionListenerExtractIDsInvalidGatewayUUID(t *testing.T) {
 	}
 }
 
+func TestNewNATSDecommissionListenerConstruction(t *testing.T) {
+	receiver := &fakes.FakeDecommissionEventReceiver{}
+	l := NewNATSDecommissionListener(nil, receiver)
+	if l == nil {
+		t.Fatal("expected non-nil listener")
+	}
+	if l.receiver != receiver {
+		t.Error("receiver not stored correctly")
+	}
+}
+
 func TestDecommissionListenerExtractIDsInvalidTenantUUID(t *testing.T) {
 	gatewayID := uuid.New().String()
 	subject := "gateway.decommissioned.not-a-uuid." + gatewayID
