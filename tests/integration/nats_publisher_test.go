@@ -37,10 +37,12 @@ func addJetStreamStream(t *testing.T, nc *nats.Conn, subjects ...string) {
 // Tests.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const telemetrySubjectGwABC = "telemetry.data.tenant-1.gw-abc"
+
 func TestNATSPublisherPublishMessageArrivesOnSubscriber(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
-	addJetStreamStream(t, nc, "telemetry.data.tenant-1.gw-abc")
+	addJetStreamStream(t, nc, telemetrySubjectGwABC)
 
 	pub, err := natsadapter.NewNATSGatewayPublisher(nc, env.URI)
 	require.NoError(t, err)
@@ -48,7 +50,7 @@ func TestNATSPublisherPublishMessageArrivesOnSubscriber(t *testing.T) {
 	// Subscribe on a separate connection so we receive our own publish.
 	subConn := connectNATS(t, env.URI)
 	msgCh := make(chan *nats.Msg, 1)
-	sub, err := subConn.Subscribe("telemetry.data.tenant-1.gw-abc", func(m *nats.Msg) {
+	sub, err := subConn.Subscribe(telemetrySubjectGwABC, func(m *nats.Msg) {
 		msgCh <- m
 	})
 	require.NoError(t, err)
@@ -69,7 +71,7 @@ func TestNATSPublisherPublishMessageArrivesOnSubscriber(t *testing.T) {
 	payload, err := json.Marshal(envelope)
 	require.NoError(t, err)
 
-	err = pub.Publish(context.Background(), "telemetry.data.tenant-1.gw-abc", payload)
+	err = pub.Publish(context.Background(), telemetrySubjectGwABC, payload)
 	require.NoError(t, err)
 
 	select {

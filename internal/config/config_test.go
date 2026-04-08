@@ -7,7 +7,10 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/config"
 )
 
-const unexpectedErrorMsg = "unexpected error: %v"
+const (
+	unexpectedErrorMsg = "unexpected error: %v"
+	errFallback5000    = "expected fallback 5000, got %d"
+)
 
 func setEnv(t *testing.T, pairs ...string) {
 	t.Helper()
@@ -166,7 +169,7 @@ func TestLoadInvalidSendFrequencyUsesFallback(t *testing.T) {
 		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.DefaultSendFrequencyMs != 5000 {
-		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+		t.Errorf(errFallback5000, cfg.DefaultSendFrequencyMs)
 	}
 }
 
@@ -178,7 +181,7 @@ func TestLoadNegativeSendFrequencyUsesFallback(t *testing.T) {
 		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.DefaultSendFrequencyMs != 5000 {
-		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+		t.Errorf(errFallback5000, cfg.DefaultSendFrequencyMs)
 	}
 }
 
@@ -202,7 +205,7 @@ func TestLoadInvalidSendFrequencyStringUsesFallback(t *testing.T) {
 		t.Fatalf(unexpectedErrorMsg, err)
 	}
 	if cfg.DefaultSendFrequencyMs != 5000 {
-		t.Errorf("expected fallback 5000, got %d", cfg.DefaultSendFrequencyMs)
+		t.Errorf(errFallback5000, cfg.DefaultSendFrequencyMs)
 	}
 }
 

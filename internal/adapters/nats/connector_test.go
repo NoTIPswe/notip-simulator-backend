@@ -21,6 +21,13 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/adapters"
 )
 
+const (
+	tlsLoopbackAddr  = "tls://127.0.0.1:4222"
+	errExpectedNil   = "expected error, got nil"
+	caPEMFilename    = "ca.pem"
+	unexpectedErrFmt = "unexpected error: %v"
+)
+
 func writeTempFile(t *testing.T, path string, data []byte) {
 	t.Helper()
 	err := os.WriteFile(path, data, 0o600)
@@ -87,9 +94,9 @@ func generateCAAndClientPEM(t *testing.T) ([]byte, []byte, []byte) {
 }
 
 func TestNewNATSMTLSConnectorReadCAError(t *testing.T) {
-	_, err := NewNATSMTLSConnector("tls://127.0.0.1:4222", "/tmp/notip-missing-ca.pem", "", "", adapters.SystemClock{})
+	_, err := NewNATSMTLSConnector(tlsLoopbackAddr, "/tmp/notip-missing-ca.pem", "", "", adapters.SystemClock{})
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(errExpectedNil)
 	}
 	if !strings.Contains(err.Error(), "read CA certificate") {
 		t.Fatalf("expected read CA error, got: %v", err)
@@ -98,12 +105,12 @@ func TestNewNATSMTLSConnectorReadCAError(t *testing.T) {
 
 func TestNewNATSMTLSConnectorInvalidCAPEM(t *testing.T) {
 	dir := t.TempDir()
-	caPath := filepath.Join(dir, "ca.pem")
+	caPath := filepath.Join(dir, caPEMFilename)
 	writeTempFile(t, caPath, []byte("not-a-certificate"))
 
-	_, err := NewNATSMTLSConnector("tls://127.0.0.1:4222", caPath, "", "", adapters.SystemClock{})
+	_, err := NewNATSMTLSConnector(tlsLoopbackAddr, caPath, "", "", adapters.SystemClock{})
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(errExpectedNil)
 	}
 	if !strings.Contains(err.Error(), "failed to parse CA certificate") {
 		t.Fatalf("expected parse CA error, got: %v", err)
@@ -114,7 +121,7 @@ func TestNewNATSMTLSConnectorStaticMTLSSuccess(t *testing.T) {
 	dir := t.TempDir()
 	caPEM, clientCertPEM, clientKeyPEM := generateCAAndClientPEM(t)
 
-	caPath := filepath.Join(dir, "ca.pem")
+	caPath := filepath.Join(dir, caPEMFilename)
 	certPath := filepath.Join(dir, "client-cert.pem")
 	keyPath := filepath.Join(dir, "client-key.pem")
 
@@ -122,9 +129,9 @@ func TestNewNATSMTLSConnectorStaticMTLSSuccess(t *testing.T) {
 	writeTempFile(t, certPath, clientCertPEM)
 	writeTempFile(t, keyPath, clientKeyPEM)
 
-	c, err := NewNATSMTLSConnector("tls://127.0.0.1:4222", caPath, certPath, keyPath, adapters.SystemClock{})
+	c, err := NewNATSMTLSConnector(tlsLoopbackAddr, caPath, certPath, keyPath, adapters.SystemClock{})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrFmt, err)
 	}
 	if !c.useStaticMTLS {
 		t.Fatal("expected static mTLS to be enabled")
@@ -138,12 +145,12 @@ func TestNewNATSMTLSConnectorStaticMTLSReadError(t *testing.T) {
 	dir := t.TempDir()
 	caPEM, _, _ := generateCAAndClientPEM(t)
 
-	caPath := filepath.Join(dir, "ca.pem")
+	caPath := filepath.Join(dir, caPEMFilename)
 	writeTempFile(t, caPath, caPEM)
 
-	_, err := NewNATSMTLSConnector("tls://127.0.0.1:4222", caPath, "/tmp/notip-missing-client-cert.pem", "/tmp/notip-missing-client-key.pem", adapters.SystemClock{})
+	_, err := NewNATSMTLSConnector(tlsLoopbackAddr, caPath, "/tmp/notip-missing-client-cert.pem", "/tmp/notip-missing-client-key.pem", adapters.SystemClock{})
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(errExpectedNil)
 	}
 	if !strings.Contains(err.Error(), "read static client certificate") {
 		t.Fatalf("expected static cert read error, got: %v", err)
@@ -154,7 +161,7 @@ func TestNewNATSMTLSConnectorStaticMTLSParseError(t *testing.T) {
 	dir := t.TempDir()
 	caPEM, clientCertPEM, _ := generateCAAndClientPEM(t)
 
-	caPath := filepath.Join(dir, "ca.pem")
+	caPath := filepath.Join(dir, caPEMFilename)
 	certPath := filepath.Join(dir, "client-cert.pem")
 	keyPath := filepath.Join(dir, "client-key.pem")
 
@@ -162,9 +169,9 @@ func TestNewNATSMTLSConnectorStaticMTLSParseError(t *testing.T) {
 	writeTempFile(t, certPath, clientCertPEM)
 	writeTempFile(t, keyPath, []byte("invalid-key"))
 
-	_, err := NewNATSMTLSConnector("tls://127.0.0.1:4222", caPath, certPath, keyPath, adapters.SystemClock{})
+	_, err := NewNATSMTLSConnector(tlsLoopbackAddr, caPath, certPath, keyPath, adapters.SystemClock{})
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(errExpectedNil)
 	}
 	if !strings.Contains(err.Error(), "parse static client certificate/key") {
 		t.Fatalf("expected static cert parse error, got: %v", err)
@@ -176,7 +183,7 @@ func TestBuildTLSConfigDynamicError(t *testing.T) {
 
 	_, err := c.buildTLSConfig(nil, nil)
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(errExpectedNil)
 	}
 	if !strings.Contains(err.Error(), "parse client certificate/key") {
 		t.Fatalf("expected dynamic parse error, got: %v", err)
@@ -188,10 +195,10 @@ func TestBuildTLSConfigStaticNotLoadedError(t *testing.T) {
 
 	_, err := c.buildTLSConfig(nil, nil)
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(errExpectedNil)
 	}
 	if !strings.Contains(err.Error(), "static client certificate is enabled but not loaded") {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrFmt, err)
 	}
 }
 
@@ -206,7 +213,7 @@ func TestBuildTLSConfigStaticSuccess(t *testing.T) {
 
 	tlsCfg, err := c.buildTLSConfig(nil, nil)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf(unexpectedErrFmt, err)
 	}
 	if tlsCfg.MinVersion != tls.VersionTLS13 {
 		t.Fatalf("expected TLS1.3 min version, got %d", tlsCfg.MinVersion)
@@ -219,17 +226,17 @@ func TestBuildTLSConfigStaticSuccess(t *testing.T) {
 func TestConnectBuildTLSError(t *testing.T) {
 	dir := t.TempDir()
 	caPEM, _, _ := generateCAAndClientPEM(t)
-	caPath := filepath.Join(dir, "ca.pem")
+	caPath := filepath.Join(dir, caPEMFilename)
 	writeTempFile(t, caPath, caPEM)
 
-	c, err := NewNATSMTLSConnector("tls://127.0.0.1:4222", caPath, "", "", adapters.SystemClock{})
+	c, err := NewNATSMTLSConnector(tlsLoopbackAddr, caPath, "", "", adapters.SystemClock{})
 	if err != nil {
 		t.Fatalf("unexpected constructor error: %v", err)
 	}
 
 	_, _, _, err = c.Connect(context.Background(), nil, nil, "tenant", uuid.New())
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(errExpectedNil)
 	}
 	if !strings.Contains(err.Error(), "build TLS config") {
 		t.Fatalf("expected TLS config error, got: %v", err)
@@ -239,7 +246,7 @@ func TestConnectBuildTLSError(t *testing.T) {
 func TestConnectNATSError(t *testing.T) {
 	dir := t.TempDir()
 	caPEM, clientCertPEM, clientKeyPEM := generateCAAndClientPEM(t)
-	caPath := filepath.Join(dir, "ca.pem")
+	caPath := filepath.Join(dir, caPEMFilename)
 	writeTempFile(t, caPath, caPEM)
 
 	c, err := NewNATSMTLSConnector("tls://127.0.0.1:1", caPath, "", "", adapters.SystemClock{})
@@ -252,7 +259,7 @@ func TestConnectNATSError(t *testing.T) {
 
 	_, _, _, err = c.Connect(ctx, clientCertPEM, clientKeyPEM, "tenant", uuid.New())
 	if err == nil {
-		t.Fatal("expected error, got nil")
+		t.Fatal(errExpectedNil)
 	}
 	if !strings.Contains(err.Error(), "connect to NATS") {
 		t.Fatalf("expected NATS connect error, got: %v", err)

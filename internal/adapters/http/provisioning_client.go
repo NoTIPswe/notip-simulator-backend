@@ -104,24 +104,7 @@ func (c *ProvisioningServiceClient) Onboard(
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		responseBody, _ := io.ReadAll(resp.Body)
 		responseText := strings.TrimSpace(string(responseBody))
-
-		switch resp.StatusCode {
-		case http.StatusConflict:
-			if responseText == "" {
-				return domain.ProvisionResult{}, domain.ErrGatewayAlreadyProvisioned
-			}
-			return domain.ProvisionResult{}, fmt.Errorf("%w: %s", domain.ErrGatewayAlreadyProvisioned, responseText)
-		case http.StatusUnauthorized:
-			if responseText == "" {
-				return domain.ProvisionResult{}, domain.ErrInvalidFactoryCredentials
-			}
-			return domain.ProvisionResult{}, fmt.Errorf("%w: %s", domain.ErrInvalidFactoryCredentials, responseText)
-		default:
-			if responseText == "" {
-				return domain.ProvisionResult{}, fmt.Errorf("onboard request failed with status: %d", resp.StatusCode)
-			}
-			return domain.ProvisionResult{}, fmt.Errorf("onboard request failed with status: %d: %s", resp.StatusCode, responseText)
-		}
+		return domain.ProvisionResult{}, mapOnboardStatusError(resp.StatusCode, responseText)
 	}
 
 	var onboardResp onboardResponse
@@ -147,6 +130,25 @@ func (c *ProvisioningServiceClient) Onboard(
 		TenantID:        onboardResp.Identity.TenantID,
 		SendFrequencyMs: onboardResp.SendFrequencyMs,
 	}, nil
+}
+
+func mapOnboardStatusError(statusCode int, responseText string) error {
+	var base error
+	switch statusCode {
+	case http.StatusConflict:
+		base = domain.ErrGatewayAlreadyProvisioned
+	case http.StatusUnauthorized:
+		base = domain.ErrInvalidFactoryCredentials
+	default:
+		if responseText == "" {
+			return fmt.Errorf("onboard request failed with status: %d", statusCode)
+		}
+		return fmt.Errorf("onboard request failed with status: %d: %s", statusCode, responseText)
+	}
+	if responseText == "" {
+		return base
+	}
+	return fmt.Errorf("%w: %s", base, responseText)
 }
 
 func (c *ProvisioningServiceClient) generateKeypairAndCSR() (keyPEM, csrPEM []byte, err error) {
