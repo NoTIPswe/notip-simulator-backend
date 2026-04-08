@@ -1,3 +1,20 @@
+# [1.2.0](https://github.com/NoTIPswe/notip-simulator-backend/compare/v1.1.0...v1.2.0) (2026-04-08)
+
+
+### Bug Fixes
+
+* bugs ([de41e8d](https://github.com/NoTIPswe/notip-simulator-backend/commit/de41e8d8bccf596d13b6f7d1a522830cf68d0c17))
+* database g serial number ([2522a3c](https://github.com/NoTIPswe/notip-simulator-backend/commit/2522a3c80e06cbbabf89251013167b2e764b3be8))
+* refactor sensor management to use ManagementGatewayID instead of GatewayID ([8fd22a8](https://github.com/NoTIPswe/notip-simulator-backend/commit/8fd22a8c81d2331204f48fd555b1a64f086ff0fd))
+* simplify error handling in Onboard method and improve test readability ([b25fd80](https://github.com/NoTIPswe/notip-simulator-backend/commit/b25fd8017956a666832715071f98c19ab74728ad))
+* stream context gateway ([84dad35](https://github.com/NoTIPswe/notip-simulator-backend/commit/84dad35fa118ee079396503a422f5507c931b28f))
+* unify test function naming conventions by removing underscores ([7c14a75](https://github.com/NoTIPswe/notip-simulator-backend/commit/7c14a75457689f716cced0813125cb0d0f2bca8b))
+
+
+### Features
+
+* add tests for NATS decommission listener and SQLite store functionality ([cb79d07](https://github.com/NoTIPswe/notip-simulator-backend/commit/cb79d07f7df9c0ed6f9d800ec2f3d6bdabb385e7))
+
 # [1.1.0](https://github.com/NoTIPswe/notip-simulator-backend/compare/v1.0.0...v1.1.0) (2026-04-03)
 
 
