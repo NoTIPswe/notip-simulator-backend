@@ -95,7 +95,7 @@ func publishDecommission(t *testing.T, js nats.JetStreamContext, tenantID, gatew
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestNATSDecommissionListener_ValidEvent_CallsReceiver(t *testing.T) {
+func TestNATSDecommissionListenerValidEventCallsReceiver(t *testing.T) {
 	env := startNATS(t)
 	_, js := setupJetStream(t, env.URI)
 
@@ -134,7 +134,7 @@ func TestNATSDecommissionListener_ValidEvent_CallsReceiver(t *testing.T) {
 	}
 }
 
-func TestNATSDecommissionListener_MultipleEvents_AllDispatched(t *testing.T) {
+func TestNATSDecommissionListenerMultipleEventsAllDispatched(t *testing.T) {
 	env := startNATS(t)
 	_, js := setupJetStream(t, env.URI)
 
@@ -160,7 +160,7 @@ func TestNATSDecommissionListener_MultipleEvents_AllDispatched(t *testing.T) {
 		"all %d decommission events must be dispatched", count)
 }
 
-func TestNATSDecommissionListener_InvalidSubject_TooFewParts_Ignored(t *testing.T) {
+func TestNATSDecommissionListenerInvalidSubjectTooFewPartsIgnored(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
 	js, err := nc.JetStream()
@@ -200,7 +200,7 @@ func TestNATSDecommissionListener_InvalidSubject_TooFewParts_Ignored(t *testing.
 	assert.Equal(t, 1, receiver.CallCount())
 }
 
-func TestNATSDecommissionListener_InvalidGatewayID_NotUUID_Ignored(t *testing.T) {
+func TestNATSDecommissionListenerInvalidGatewayIDNotUUIDIgnored(t *testing.T) {
 	env := startNATS(t)
 	_, js := setupJetStream(t, env.URI)
 
@@ -224,7 +224,7 @@ func TestNATSDecommissionListener_InvalidGatewayID_NotUUID_Ignored(t *testing.T)
 	assert.Equal(t, 0, receiver.CallCount(), "non-UUID gatewayID must be silently discarded")
 }
 
-func TestNATSDecommissionListener_InvalidTenantID_NotUUID_Ignored(t *testing.T) {
+func TestNATSDecommissionListenerInvalidTenantIDNotUUIDIgnored(t *testing.T) {
 	env := startNATS(t)
 	_, js := setupJetStream(t, env.URI)
 
@@ -246,7 +246,7 @@ func TestNATSDecommissionListener_InvalidTenantID_NotUUID_Ignored(t *testing.T) 
 	assert.Equal(t, 0, receiver.CallCount(), "non-UUID tenantID must be silently discarded")
 }
 
-func TestNATSDecommissionListener_StopsCleanlyOnContextCancel(t *testing.T) {
+func TestNATSDecommissionListenerStopsCleanlyOnContextCancel(t *testing.T) {
 	env := startNATS(t)
 	_, js := setupJetStream(t, env.URI)
 

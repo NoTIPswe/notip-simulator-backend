@@ -101,7 +101,7 @@ func (e *subscriberEnv) subscribeACK(t *testing.T) <-chan domain.CommandACK {
 
 // TestNATSSubscriber_ValidCommand_DeliveredToChannel verifies that a fresh command
 // published to JetStream arrives on the subscriber's Messages() channel.
-func TestNATSSubscriber_ValidCommand_DeliveredToChannel(t *testing.T) {
+func TestNATSSubscriberValidCommandDeliveredToChannel(t *testing.T) {
 	env := startNATS(t)
 	se := setupSubscriberEnv(t, env.URI)
 
@@ -142,7 +142,7 @@ func TestNATSSubscriber_ValidCommand_DeliveredToChannel(t *testing.T) {
 
 // TestNATSSubscriber_ExpiredCommand_PublishesExpiredACK verifies that a command
 // whose IssuedAt is > 60s in the past is discarded and an "expired" ACK is published.
-func TestNATSSubscriber_ExpiredCommand_PublishesExpiredACK(t *testing.T) {
+func TestNATSSubscriberExpiredCommandPublishesExpiredACK(t *testing.T) {
 	env := startNATS(t)
 	se := setupSubscriberEnv(t, env.URI)
 
@@ -186,7 +186,7 @@ func TestNATSSubscriber_ExpiredCommand_PublishesExpiredACK(t *testing.T) {
 
 // TestNATSSubscriber_FreshCommand_ExactlyAtTTLBoundary verifies that a command
 // issued exactly 60s ago is treated as expired (boundary condition).
-func TestNATSSubscriber_FreshCommand_ExactlyAtTTLBoundary(t *testing.T) {
+func TestNATSSubscriberFreshCommandExactlyAtTTLBoundary(t *testing.T) {
 	env := startNATS(t)
 	se := setupSubscriberEnv(t, env.URI)
 
@@ -224,7 +224,7 @@ func TestNATSSubscriber_FreshCommand_ExactlyAtTTLBoundary(t *testing.T) {
 
 // TestNATSSubscriber_FirmwarePush_DeliveredToChannel verifies the FirmwarePush
 // command type is decoded and forwarded correctly.
-func TestNATSSubscriber_FirmwarePush_DeliveredToChannel(t *testing.T) {
+func TestNATSSubscriberFirmwarePushDeliveredToChannel(t *testing.T) {
 	env := startNATS(t)
 	se := setupSubscriberEnv(t, env.URI)
 
@@ -266,7 +266,7 @@ func TestNATSSubscriber_FirmwarePush_DeliveredToChannel(t *testing.T) {
 
 // TestNATSSubscriber_MalformedPayload_MessageTermed verifies that a non-JSON
 // message is nack-terminated and does not reach the Messages() channel.
-func TestNATSSubscriber_MalformedPayload_MessageTermed(t *testing.T) {
+func TestNATSSubscriberMalformedPayloadMessageTermed(t *testing.T) {
 	env := startNATS(t)
 	se := setupSubscriberEnv(t, env.URI)
 
@@ -294,7 +294,7 @@ func TestNATSSubscriber_MalformedPayload_MessageTermed(t *testing.T) {
 
 // TestNATSSubscriber_Close_DrainsThenCloses verifies that Close() can be called
 // without error and that Messages() stops producing after close.
-func TestNATSSubscriber_Close_DrainsThenCloses(t *testing.T) {
+func TestNATSSubscriberCloseDrainsThenCloses(t *testing.T) {
 	env := startNATS(t)
 	se := setupSubscriberEnv(t, env.URI)
 
@@ -321,7 +321,7 @@ func TestNATSSubscriber_Close_DrainsThenCloses(t *testing.T) {
 // publish FirmwarePush → worker processes → ACK published to NATS.
 // This exercises the registry → worker → subscriber → commandCh → handleIncomingCommand
 // → sendACK path end-to-end with real NATS and real SQLite.
-func TestNATSSubscriber_WorkerCommandFlow_FirmwareACK(t *testing.T) {
+func TestNATSSubscriberWorkerCommandFlowFirmwareACK(t *testing.T) {
 	// Full pipeline: real NATS + real SQLite + real worker.
 	env := startNATS(t)
 	se := setupSubscriberEnv(t, env.URI)

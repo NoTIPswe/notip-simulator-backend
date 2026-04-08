@@ -42,7 +42,7 @@ func (p *realPublisher) Reconnect(_ context.Context) error {
 // Tests.
 // ─────────────────────────────────────────────────────────────────────────────
 
-func TestNATSPublisher_Publish_MessageArrivesOnSubscriber(t *testing.T) {
+func TestNATSPublisherPublishMessageArrivesOnSubscriber(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
 
@@ -87,7 +87,7 @@ func TestNATSPublisher_Publish_MessageArrivesOnSubscriber(t *testing.T) {
 	}
 }
 
-func TestNATSPublisher_Publish_SubjectRouting(t *testing.T) {
+func TestNATSPublisherPublishSubjectRouting(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
 	pub := &realPublisher{nc: nc}
@@ -128,7 +128,7 @@ func TestNATSPublisher_Publish_SubjectRouting(t *testing.T) {
 	}
 }
 
-func TestNATSPublisher_Close_StopsPublishing(t *testing.T) {
+func TestNATSPublisherCloseStopsPublishing(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
 	pub := &realPublisher{nc: nc}
@@ -140,7 +140,7 @@ func TestNATSPublisher_Close_StopsPublishing(t *testing.T) {
 	assert.Error(t, err, "publishing on a closed connection must fail")
 }
 
-func TestNATSPublisher_CommandACK_DeliveredCorrectly(t *testing.T) {
+func TestNATSPublisherCommandACKDeliveredCorrectly(t *testing.T) {
 	env := startNATS(t)
 	nc := connectNATS(t, env.URI)
 	pub := &realPublisher{nc: nc}

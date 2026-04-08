@@ -26,6 +26,7 @@ const (
 	testProvisioningURL = "http://provisioning.local"
 	testMissingCACert   = "/definitely/missing/ca.pem"
 	msgUnexpectedError  = "unexpected error: %v"
+	msgWriteTempCert    = "write temp cert file: %v"
 )
 
 func writeTempCACert(t *testing.T) string {
@@ -109,7 +110,7 @@ func TestSetupDecommissionListenerReadCACertFails(t *testing.T) {
 func TestSetupDecommissionListenerParseCACertFails(t *testing.T) {
 	caPath := filepath.Join(t.TempDir(), "ca.pem")
 	if err := os.WriteFile(caPath, []byte("not-a-cert"), 0o600); err != nil {
-		t.Fatalf("write temp cert file: %v", err)
+		t.Fatalf(msgWriteTempCert, err)
 	}
 
 	cfg := &config.Config{
@@ -166,7 +167,7 @@ func TestSetupDecommissionListenerReadClientKeyFails(t *testing.T) {
 	caPath := writeTempCACert(t)
 	certPath := filepath.Join(t.TempDir(), "client.crt")
 	if err := os.WriteFile(certPath, []byte("cert"), 0o600); err != nil {
-		t.Fatalf("write temp cert file: %v", err)
+		t.Fatalf(msgWriteTempCert, err)
 	}
 
 	cfg := &config.Config{
@@ -191,7 +192,7 @@ func TestSetupDecommissionListenerParseClientCertKeyFails(t *testing.T) {
 	certPath := filepath.Join(tmpDir, "client.crt")
 	keyPath := filepath.Join(tmpDir, "client.key")
 	if err := os.WriteFile(certPath, []byte("bad-cert"), 0o600); err != nil {
-		t.Fatalf("write temp cert file: %v", err)
+		t.Fatalf(msgWriteTempCert, err)
 	}
 	if err := os.WriteFile(keyPath, []byte("bad-key"), 0o600); err != nil {
 		t.Fatalf("write temp key file: %v", err)

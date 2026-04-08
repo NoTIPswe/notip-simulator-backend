@@ -21,7 +21,9 @@ func TestRunMigrationsRebuildsLegacyGatewaySchemaWithoutSerial(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = rawDB.Close() })
 
-	_, err = rawDB.Exec(`
+	ctx := context.Background()
+
+	_, err = rawDB.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version    TEXT     PRIMARY KEY,
 			applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -65,7 +67,7 @@ func TestRunMigrationsRebuildsLegacyGatewaySchemaWithoutSerial(t *testing.T) {
 
 	legacyMgmtID := uuid.New()
 	legacySensorID := uuid.New()
-	res, err := rawDB.Exec(`
+	res, err := rawDB.ExecContext(ctx, `
 		INSERT INTO gateways (
 			management_gateway_id, factory_id, factory_key, serial_number,
 			model, firmware_version, provisioned, send_frequency_ms,
@@ -88,7 +90,7 @@ func TestRunMigrationsRebuildsLegacyGatewaySchemaWithoutSerial(t *testing.T) {
 	legacyGatewayID, err := res.LastInsertId()
 	require.NoError(t, err)
 
-	_, err = rawDB.Exec(`
+	_, err = rawDB.ExecContext(ctx, `
 		INSERT INTO sensors (
 			gateway_id, sensor_id, type, min_range, max_range, algorithm, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -107,12 +109,11 @@ func TestRunMigrationsRebuildsLegacyGatewaySchemaWithoutSerial(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.Close() })
 
-	ctx := context.Background()
 	require.NoError(t, store.RunMigrations(ctx))
 
 	rows, err := store.db.QueryContext(ctx, `PRAGMA table_info(gateways)`)
 	require.NoError(t, err)
-	defer rows.Close()
+	t.Cleanup(func() { require.NoError(t, rows.Close()) })
 
 	hasSerialColumn := false
 	for rows.Next() {

@@ -208,7 +208,7 @@ func handleShutdown(ctx context.Context, apiSrv *httpadapter.HTTPServer, metSrv 
 	case <-ctx.Done():
 		slog.Info("Shutdown signal received, initiating graceful shutdown")
 
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(ctx, serverShutdownTimeout)
 		defer cancel()
 
 		if err := apiSrv.Stop(shutdownCtx); err != nil {

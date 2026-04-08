@@ -8,7 +8,7 @@ import (
 	"github.com/NoTIPswe/notip-simulator-backend/internal/fakes"
 )
 
-func TestNATSGatewayPublisher_Publish_Success(t *testing.T) {
+func TestNATSGatewayPublisherPublishSuccess(t *testing.T) {
 	pub := &fakes.FakePublisher{}
 	_ = pub
 	//This test verifies that the FakePublisher is working correctly as a stub.
@@ -22,7 +22,7 @@ func TestNATSGatewayPublisher_Publish_Success(t *testing.T) {
 	}
 }
 
-func TestNATSGatewayPublisher_Publish_Error(t *testing.T) {
+func TestNATSGatewayPublisherPublishError(t *testing.T) {
 	pub := &fakes.FakePublisher{Err: fakes.ErrSimulated}
 	err := pub.Publish(context.Background(), "subject", []byte("data"))
 	if err == nil {
@@ -30,7 +30,7 @@ func TestNATSGatewayPublisher_Publish_Error(t *testing.T) {
 	}
 }
 
-func TestNATSGatewayPublisher_Close(t *testing.T) {
+func TestNATSGatewayPublisherClose(t *testing.T) {
 	pub := &fakes.FakePublisher{}
 	_ = pub.Close()
 	if !pub.IsClosed() {
@@ -38,7 +38,7 @@ func TestNATSGatewayPublisher_Close(t *testing.T) {
 	}
 }
 
-func TestNATSGatewayPublisher_Reconnect_Success(t *testing.T) {
+func TestNATSGatewayPublisherReconnectSuccess(t *testing.T) {
 	pub := &fakes.FakePublisher{}
 	err := pub.Reconnect(context.Background())
 	if err != nil {
@@ -49,7 +49,7 @@ func TestNATSGatewayPublisher_Reconnect_Success(t *testing.T) {
 	}
 }
 
-func TestNATSGatewayPublisher_Reconnect_Error(t *testing.T) {
+func TestNATSGatewayPublisherReconnectError(t *testing.T) {
 	pub := &fakes.FakePublisher{ReconnectErr: fakes.ErrSimulated}
 	err := pub.Reconnect(context.Background())
 	if err == nil {

@@ -15,7 +15,7 @@ func newTestBuffer(pub *fakes.FakePublisher, capacity int) *MessageBuffer {
 	return NewMessageBuffer(capacity, "telemetry.test.gw1", "gw1", pub, met)
 }
 
-func TestBuffer_SendAndFlush_DeliveryAll(t *testing.T) {
+func TestBufferSendAndFlushDeliveryAll(t *testing.T) {
 	pub := &fakes.FakePublisher{}
 	buf := newTestBuffer(pub, 10)
 
@@ -33,7 +33,7 @@ func TestBuffer_SendAndFlush_DeliveryAll(t *testing.T) {
 	}
 }
 
-func TestBuffer_Overflow_NoPanic(t *testing.T) {
+func TestBufferOverflowNoPanic(t *testing.T) {
 	//overflow should drop old-1
 	pub := &fakes.FakePublisher{Err: errors.New("nats unavailable")}
 	buf := newTestBuffer(pub, 2)
@@ -44,7 +44,7 @@ func TestBuffer_Overflow_NoPanic(t *testing.T) {
 	buf.Send([]byte("new-3")) // overflow.
 }
 
-func TestBuffer_PublisherError_DoesNotCrash(t *testing.T) {
+func TestBufferPublisherErrorDoesNotCrash(t *testing.T) {
 	pub := &fakes.FakePublisher{Err: errors.New("transient error")}
 	buf := newTestBuffer(pub, 10)
 
@@ -57,7 +57,7 @@ func TestBuffer_PublisherError_DoesNotCrash(t *testing.T) {
 	<-ctx.Done() // no panic = success.
 }
 
-func TestBuffer_ContextCancel_StopsFlush(t *testing.T) {
+func TestBufferContextCancelStopsFlush(t *testing.T) {
 	pub := &fakes.FakePublisher{}
 	buf := newTestBuffer(pub, 10)
 
@@ -77,7 +77,7 @@ func TestBuffer_ContextCancel_StopsFlush(t *testing.T) {
 	}
 }
 
-func TestBuffer_EmptyFlush_NoPanic(t *testing.T) {
+func TestBufferEmptyFlushNoPanic(t *testing.T) {
 	pub := &fakes.FakePublisher{}
 	buf := newTestBuffer(pub, 10)
 

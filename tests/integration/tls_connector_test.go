@@ -16,7 +16,7 @@ import (
 
 // TestGatewayConnector_MTLSConnects_VerificaTLSSuccesso verifies the encrypted TLS transmission requirement.
 // It uses on-the-fly certificates to connect to a secured NATS broker.
-func TestGatewayConnector_MTLSConnects_VerificaTLSSuccesso(t *testing.T) {
+func TestGatewayConnectorMTLSConnectsVerificaTLSSuccesso(t *testing.T) {
 	// Start the NATS container with forced mTLS.
 	env := setupSecureNATS(t)
 	ctx := context.Background()
@@ -63,7 +63,7 @@ func TestGatewayConnector_MTLSConnects_VerificaTLSSuccesso(t *testing.T) {
 }
 
 // TestGatewayConnector_PlaintextRejected_VerificaRifiutoSenzaTLS demonstrates that the broker rejects unencrypted communications.
-func TestGatewayConnector_PlaintextRejected_VerificaRifiutoSenzaTLS(t *testing.T) {
+func TestGatewayConnectorPlaintextRejectedVerificaRifiutoSenzaTLS(t *testing.T) {
 	env := setupSecureNATS(t)
 	ctx := context.Background()
 
