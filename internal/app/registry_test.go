@@ -183,9 +183,10 @@ func TestBulkCreateAllSucceed(t *testing.T) {
 	reg := newTestRegistry(d)
 	defer reg.StopAll(2 * time.Second)
 
+	factoryIDs := []string{"fid-1", "fid-2", "fid-3"}
+
 	gws, errs := reg.BulkCreateGateways(context.Background(), domain.BulkCreateRequest{
-		Count:           3,
-		FactoryID:       "fid",
+		FactoryIDs:      factoryIDs,
 		FactoryKey:      "fkey",
 		Model:           "M1",
 		FirmwareVersion: "1.0",
@@ -198,8 +199,40 @@ func TestBulkCreateAllSucceed(t *testing.T) {
 		}
 	}
 
-	if len(gws) != 3 {
-		t.Errorf("want 3 gateways, got %d", len(gws))
+	if len(gws) != len(factoryIDs) {
+		t.Errorf("want %d gateways, got %d", len(factoryIDs), len(gws))
+	}
+}
+
+func TestBulkCreateWithFactoryIDs(t *testing.T) {
+	d := newTestDeps()
+	d.provisioner.Result = provisionResult()
+	reg := newTestRegistry(d)
+	defer reg.StopAll(2 * time.Second)
+
+	factoryIDs := []string{"fid-1", "fid-2", "fid-3"}
+	gws, errs := reg.BulkCreateGateways(context.Background(), domain.BulkCreateRequest{
+		FactoryIDs:      factoryIDs,
+		FactoryKey:      "fkey",
+		Model:           "M1",
+		FirmwareVersion: "1.0",
+		SendFrequencyMs: 50,
+	})
+
+	if len(gws) != len(factoryIDs) {
+		t.Fatalf("want %d gateways, got %d", len(factoryIDs), len(gws))
+	}
+
+	for i := range factoryIDs {
+		if errs[i] != nil {
+			t.Fatalf("unexpected error for gateway %d: %v", i, errs[i])
+		}
+		if gws[i] == nil {
+			t.Fatalf("gateway %d is nil", i)
+		}
+		if gws[i].FactoryID != factoryIDs[i] {
+			t.Errorf("gateway %d factoryId = %q, want %q", i, gws[i].FactoryID, factoryIDs[i])
+		}
 	}
 }
 
@@ -209,7 +242,7 @@ func TestBulkCreateAllFail(t *testing.T) {
 	reg := newTestRegistry(d)
 
 	_, errs := reg.BulkCreateGateways(context.Background(), domain.BulkCreateRequest{
-		Count: 2, FactoryID: "fid", FactoryKey: "fkey",
+		FactoryIDs: []string{"fid-1", "fid-2"}, FactoryKey: "fkey",
 	})
 	if len(errs) == 0 {
 		t.Fatal("expected errors for all failed creations")

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/NoTIPswe/notip-simulator-backend/internal/adapters/http/dto"
 	"github.com/NoTIPswe/notip-simulator-backend/internal/domain"
@@ -130,6 +131,12 @@ func (h *GatewayHandler) BulkCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.FactoryIDs = sanitizeFactoryIDs(req.FactoryIDs)
+	if len(req.FactoryIDs) == 0 {
+		http.Error(w, "factoryIds is required and must contain at least one non-empty value", http.StatusBadRequest)
+		return
+	}
+
 	gateways, errs := h.lifecycle.BulkCreateGateways(r.Context(), req)
 	stringErrs := make([]string, len(errs))
 	hasErrors := false
@@ -158,4 +165,15 @@ func (h *GatewayHandler) BulkCreate(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		slog.Error(errFailedEncodeResponse, "err", err)
 	}
+}
+
+func sanitizeFactoryIDs(factoryIDs []string) []string {
+	out := make([]string, 0, len(factoryIDs))
+	for _, factoryID := range factoryIDs {
+		trimmed := strings.TrimSpace(factoryID)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

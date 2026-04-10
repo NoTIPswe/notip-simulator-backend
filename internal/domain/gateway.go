@@ -60,12 +60,11 @@ type CreateGatewayRequest struct {
 
 // BulkCreateRequest is the application-layer command for batch gateway creation.
 type BulkCreateRequest struct {
-	Count           int    `json:"count"`
-	FactoryID       string `json:"factoryId"`
-	FactoryKey      string `json:"factoryKey"`
-	Model           string `json:"model"`
-	FirmwareVersion string `json:"firmwareVersion"`
-	SendFrequencyMs int    `json:"sendFrequencyMs"`
+	FactoryIDs      []string `json:"factoryIds"`
+	FactoryKey      string   `json:"factoryKey"`
+	Model           string   `json:"model"`
+	FirmwareVersion string   `json:"firmwareVersion"`
+	SendFrequencyMs int      `json:"sendFrequencyMs"`
 }
 
 type ProvisionResult struct {
