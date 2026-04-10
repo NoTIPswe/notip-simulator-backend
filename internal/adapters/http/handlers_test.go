@@ -245,7 +245,14 @@ func TestGatewayHandlerDelete204(t *testing.T) {
 func TestGatewayHandlerBulkCreate201(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{
 		BulkCreateGatewaysFn: func(_ context.Context, req domain.BulkCreateRequest) ([]*domain.SimGateway, []error) {
-			gws := make([]*domain.SimGateway, req.Count)
+			if len(req.FactoryIDs) != 2 {
+				t.Fatalf("want 2 factoryIds, got %d", len(req.FactoryIDs))
+			}
+			if req.FactoryIDs[0] != "fid-1" || req.FactoryIDs[1] != "fid-2" {
+				t.Fatalf("unexpected factoryIds: %#v", req.FactoryIDs)
+			}
+
+			gws := make([]*domain.SimGateway, len(req.FactoryIDs))
 			for i := range gws {
 				gws[i] = &domain.SimGateway{ID: int64(i + 1)}
 			}
@@ -256,7 +263,7 @@ func TestGatewayHandlerBulkCreate201(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	h.BulkCreate(w, newReq(http.MethodPost, pathBulkCreateGateway, jsonBody(t, domain.BulkCreateRequest{
-		Count: 2, FactoryID: "fid", FactoryKey: "fkey",
+		FactoryIDs: []string{"fid-1", "fid-2"}, FactoryKey: "fkey",
 	})))
 	if w.Code != http.StatusCreated && w.Code != http.StatusMultiStatus {
 		t.Errorf("want 201 or 207, got %d", w.Code)
@@ -531,6 +538,15 @@ func TestGatewayHandlerBulkCreateBadBody400(t *testing.T) {
 	}
 }
 
+func TestGatewayHandlerBulkCreateMissingFactoryIDs400(t *testing.T) {
+	h := simhttp.NewGatewayHandler(&fakes.FakeGatewayLifecycleService{})
+	w := httptest.NewRecorder()
+	h.BulkCreate(w, newReq(http.MethodPost, pathBulkCreateGateway, jsonBody(t, domain.BulkCreateRequest{})))
+	if w.Code != http.StatusBadRequest {
+		t.Errorf(want400Msg, w.Code)
+	}
+}
+
 func TestGatewayHandlerBulkCreatePartialErrors207(t *testing.T) {
 	lc := &fakes.FakeGatewayLifecycleService{
 		BulkCreateGatewaysFn: func(_ context.Context, req domain.BulkCreateRequest) ([]*domain.SimGateway, []error) {
@@ -546,7 +562,7 @@ func TestGatewayHandlerBulkCreatePartialErrors207(t *testing.T) {
 	h := simhttp.NewGatewayHandler(lc)
 	w := httptest.NewRecorder()
 	h.BulkCreate(w, newReq(http.MethodPost, pathBulkCreateGateway, jsonBody(t, domain.BulkCreateRequest{
-		Count: 2,
+		FactoryIDs: []string{"fid-1", "fid-2"},
 	})))
 	if w.Code != http.StatusMultiStatus {
 		t.Errorf("want 207, got %d", w.Code)

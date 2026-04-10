@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,19 +97,20 @@ func (r *GatewayRegistry) CreateAndStart(ctx context.Context, req domain.CreateG
 }
 
 func (r *GatewayRegistry) BulkCreateGateways(ctx context.Context, req domain.BulkCreateRequest) ([]*domain.SimGateway, []error) {
-	results := make([]*domain.SimGateway, req.Count)
-	errs := make([]error, req.Count)
+	factoryIDs := resolveBulkFactoryIDs(req.FactoryIDs)
+	results := make([]*domain.SimGateway, len(factoryIDs))
+	errs := make([]error, len(factoryIDs))
 
 	sem := make(chan struct{}, bulkCreateConcurrency)
 	var wg sync.WaitGroup
-	for i := 0; i < req.Count; i++ {
+	for i, factoryID := range factoryIDs {
 		wg.Add(1)
-		go func(idx int) {
+		go func(idx int, fid string) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			gw, err := r.CreateAndStart(ctx, domain.CreateGatewayRequest{
-				FactoryID:       req.FactoryID,
+				FactoryID:       fid,
 				FactoryKey:      req.FactoryKey,
 				Model:           req.Model,
 				FirmwareVersion: req.FirmwareVersion,
@@ -116,11 +118,22 @@ func (r *GatewayRegistry) BulkCreateGateways(ctx context.Context, req domain.Bul
 			})
 			results[idx] = gw
 			errs[idx] = err
-		}(i)
+		}(i, factoryID)
 	}
 	wg.Wait()
 
 	return results, errs
+}
+
+func resolveBulkFactoryIDs(rawFactoryIDs []string) []string {
+	factoryIDs := make([]string, 0, len(rawFactoryIDs))
+	for _, factoryID := range rawFactoryIDs {
+		trimmed := strings.TrimSpace(factoryID)
+		if trimmed != "" {
+			factoryIDs = append(factoryIDs, trimmed)
+		}
+	}
+	return factoryIDs
 }
 
 func (r *GatewayRegistry) Start(ctx context.Context, managementID uuid.UUID) error {
