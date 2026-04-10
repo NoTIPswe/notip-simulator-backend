@@ -743,3 +743,25 @@ func TestAnomalyHandlerOutlierBadBody400(t *testing.T) {
 		t.Errorf("want 400 for bad body, got %d", w.Code)
 	}
 }
+
+func TestSensorHandlerAddInvalidRange400(t *testing.T) {
+	svc := &fakes.FakeSensorManagementService{
+		AddSensorFn: func(_ context.Context, _ uuid.UUID, _ domain.SimSensor) (*domain.SimSensor, error) {
+			return nil, domain.ErrInvalidSensorRange
+		},
+	}
+	h := simhttp.NewSensorHandler(svc)
+
+	w := serveWithMux(routeGatewaySensorsAdd, h.Add,
+		newReq(http.MethodPost, pathGateway1Sensors,
+			jsonBody(t, domain.SimSensor{
+				Type:      domain.Temperature,
+				MinRange:  100,
+				MaxRange:  50,
+				Algorithm: domain.UniformRandom,
+			})))
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("want 400 for invalid range, got %d", w.Code)
+	}
+}

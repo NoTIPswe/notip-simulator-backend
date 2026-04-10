@@ -22,6 +22,8 @@ func writeError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, domain.ErrInvalidFactoryCredentials):
 		http.Error(w, err.Error(), http.StatusUnauthorized)
+	case errors.Is(err, domain.ErrInvalidSensorRange):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		slog.Error("internal error", "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
