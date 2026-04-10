@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/NoTIPswe/notip-simulator-backend/compare/v1.2.0...v1.3.0) (2026-04-10)
+
+
+### Features
+
+* bulk creation ([c750de0](https://github.com/NoTIPswe/notip-simulator-backend/commit/c750de09d98b55cb6c781ed34ad6ee6f1e7cd55a))
+
 # [1.2.0](https://github.com/NoTIPswe/notip-simulator-backend/compare/v1.1.0...v1.2.0) (2026-04-08)
 
 
