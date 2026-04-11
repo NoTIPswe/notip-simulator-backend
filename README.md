@@ -4,7 +4,7 @@ A Go service that simulates IoT gateways for the NoTIP platform. It provisions v
 
 ## Overview
 
-The simulator is designed for integration testing and development of the NoTIP platform. Each simulated gateway:
+The simulator is designed for creating simulated gateways for the NoTIP platform. Each simulated gateway:
 
 1. Onboards itself through the Provisioning Service, receiving a TLS certificate and an AES-256 key.
 2. Runs a per-gateway worker goroutine that ticks at a configurable frequency and publishes AES-256-GCM encrypted telemetry envelopes to NATS.
