@@ -297,9 +297,11 @@ func TestE2EBulkCreateAllGatewaysRunning(t *testing.T) {
 	e := newE2EEnv(t)
 	ctx := context.Background()
 
-	const count = 5
+	factoryIDs := []string{"f-1", "f-2", "f-3", "f-4", "f-5"}
 	gateways, errs := e.registry.BulkCreateGateways(ctx, domain.BulkCreateRequest{
-		Count: count,
+		FactoryIDs:      factoryIDs,
+		FactoryKey:      "k",
+		SendFrequencyMs: 50,
 	})
 
 	for i, err := range errs {
@@ -312,7 +314,7 @@ func TestE2EBulkCreateAllGatewaysRunning(t *testing.T) {
 			running++
 		}
 	}
-	assert.Equal(t, count, running, "all gateways should have been created")
+	assert.Equal(t, len(factoryIDs), running, "all gateways should have been created")
 
 	// Clean up all workers.
 	for _, gw := range gateways {

@@ -443,7 +443,7 @@ func TestIntegrationBulkCreateAllSuccess(t *testing.T) {
 	e := newIntegrationEnv(t)
 
 	resp := e.postJSON(t, "/sim/gateways/bulk", domain.BulkCreateRequest{
-		Count: 3,
+		FactoryIDs: []string{"fid-1", "fid-2", "fid-3"},
 	})
 	defer func() { _ = resp.Body.Close() }()
 
@@ -467,7 +467,7 @@ func TestIntegrationBulkCreateAllFailure(t *testing.T) {
 	e.provisioner.Err = fakes.ErrSimulated // make every provisioning call fail.
 
 	resp := e.postJSON(t, "/sim/gateways/bulk", domain.BulkCreateRequest{
-		Count: 2,
+		FactoryIDs: []string{"fid-1", "fid-2"},
 	})
 	defer func() { _ = resp.Body.Close() }()
 
