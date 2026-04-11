@@ -1,3 +1,17 @@
+# [2.0.0](https://github.com/NoTIPswe/notip-simulator-backend/compare/v1.3.0...v2.0.0) (2026-04-11)
+
+
+### Bug Fixes
+
+* update README ([9dd37d9](https://github.com/NoTIPswe/notip-simulator-backend/commit/9dd37d9981af4363ff31295ec171cdf7d00355e5))
+* update README ([51d7f6f](https://github.com/NoTIPswe/notip-simulator-backend/commit/51d7f6f9770750f41ac6a53edd8e8b5faf1b8ff7))
+
+
+### BREAKING CHANGES
+
+* new version
+* new version
+
 # [1.3.0](https://github.com/NoTIPswe/notip-simulator-backend/compare/v1.2.0...v1.3.0) (2026-04-10)
 
 
