@@ -1,4 +1,6 @@
 # notip-simulator-backend
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=NoTIPswe_notip-simulator-backend&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=NoTIPswe_notip-simulator-backend)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=NoTIPswe_notip-simulator-backend&metric=coverage)](https://sonarcloud.io/summary/new_code?id=NoTIPswe_notip-simulator-backend)
 
 A Go service that simulates IoT gateways for the NoTIP platform. It provisions virtual gateways against the real Provisioning Service, attaches configurable sensors to each one, and streams encrypted telemetry over NATS JetStream — all without physical hardware.
 
