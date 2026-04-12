@@ -1,3 +1,10 @@
+## [2.1.1](https://github.com/NoTIPswe/notip-simulator-backend/compare/v2.1.0...v2.1.1) (2026-04-12)
+
+
+### Bug Fixes
+
+* update README to include quality gate and coverage badges ([912e4ff](https://github.com/NoTIPswe/notip-simulator-backend/commit/912e4ff0ef80b70c8c262781a339e6a47dc6650f))
+
 # [2.1.0](https://github.com/NoTIPswe/notip-simulator-backend/compare/v2.0.0...v2.1.0) (2026-04-12)
 
 
