@@ -66,6 +66,8 @@ type GatewayWorker struct {
 	configCh      chan domain.GatewayConfigUpdate
 	activeAnomaly *activeAnomalyState
 
+	anomalyCommandBuffer []domain.IncomingCommand
+
 	commandPumpCancel context.CancelFunc
 }
 
@@ -182,14 +184,14 @@ func (w *GatewayWorker) sensorLoop(ctx context.Context) {
 		case cmd := <-w.commandCh:
 			w.handleIncomingCommand(ctx, cmd)
 		case <-tickC:
-			w.processTick(ticker)
+			w.processTick(ctx, ticker)
 		}
 	}
 }
 
-func (w *GatewayWorker) processTick(ticker *time.Ticker) {
+func (w *GatewayWorker) processTick(ctx context.Context, ticker *time.Ticker) {
 	w.drainControlChannels(ticker)
-	w.checkAnomalyExpiry()
+	w.checkAnomalyExpiry(ctx)
 	w.publishSensorData()
 }
 
@@ -239,7 +241,7 @@ drainOutliers:
 	}
 }
 
-func (w *GatewayWorker) checkAnomalyExpiry() {
+func (w *GatewayWorker) checkAnomalyExpiry(ctx context.Context) {
 	if w.activeAnomaly == nil {
 		return
 	}
@@ -251,6 +253,15 @@ func (w *GatewayWorker) checkAnomalyExpiry() {
 		return
 	}
 	w.activeAnomaly = nil
+	w.flushBufferedCommands(ctx)
+}
+
+func (w *GatewayWorker) flushBufferedCommands(ctx context.Context) {
+	for _, cmd := range w.anomalyCommandBuffer {
+		ackStatus, ackMessage := w.processIncomingCommand(ctx, cmd)
+		w.sendACK(ctx, cmd.CommandID, ackStatus, ackMessage)
+	}
+	w.anomalyCommandBuffer = w.anomalyCommandBuffer[:0]
 }
 
 func (w *GatewayWorker) publishSensorData() {
@@ -340,6 +351,11 @@ func (w *GatewayWorker) buildEnvelope(sensor domain.SimSensor, payload domain.En
 }
 
 func (w *GatewayWorker) handleIncomingCommand(ctx context.Context, cmd domain.IncomingCommand) {
+	if w.activeAnomaly != nil {
+		slog.Info("buffering command during active anomaly", "commandID", cmd.CommandID, "anomalyType", w.activeAnomaly.anomalyType)
+		w.anomalyCommandBuffer = append(w.anomalyCommandBuffer, cmd)
+		return
+	}
 	ackStatus, ackMessage := w.processIncomingCommand(ctx, cmd)
 	w.sendACK(ctx, cmd.CommandID, ackStatus, ackMessage)
 }

@@ -957,6 +957,43 @@ func TestWorkerHandleIncomingCommandFirmwarePushInvalidPayloadSendsNACK(t *testi
 	}
 }
 
+// handleIncomingCommand: command is buffered (not processed) while an anomaly is active,
+// then flushed and ACKed once the anomaly expires.
+func TestWorkerHandleIncomingCommandBufferedDuringAnomalyFlushedAfter(t *testing.T) {
+	worker, pub, _ := newCommandTestWorker(t)
+
+	worker.activeAnomaly = &activeAnomalyState{anomalyType: domain.Disconnect}
+
+	status := domain.Online
+	payload, _ := json.Marshal(domain.CommandConfigPayload{Status: &status})
+	worker.handleIncomingCommand(context.Background(), domain.IncomingCommand{
+		CommandID: "cmd-during-anomaly",
+		Type:      domain.ConfigUpdate,
+		Payload:   payload,
+	})
+
+	// Command must be buffered, not processed yet.
+	if len(pub.Messages) != 0 {
+		t.Fatalf("expected no published messages while anomaly active, got %d", len(pub.Messages))
+	}
+	if len(worker.anomalyCommandBuffer) != 1 {
+		t.Fatalf("expected 1 buffered command, got %d", len(worker.anomalyCommandBuffer))
+	}
+
+	// Simulate anomaly expiry: clear the anomaly and flush.
+	worker.activeAnomaly = nil
+	worker.flushBufferedCommands(context.Background())
+
+	// Command must now have been processed and ACKed.
+	ack := decodeLastACK(t, pub)
+	if ack.Status != domain.ACK {
+		t.Fatalf("expected ACK after flush, got %s", ack.Status)
+	}
+	if len(worker.anomalyCommandBuffer) != 0 {
+		t.Fatalf("expected empty buffer after flush, got %d", len(worker.anomalyCommandBuffer))
+	}
+}
+
 // handleConfigUpdateCommand: sendFrequencyMs <= 0 returns NACK.
 func TestWorkerHandleIncomingCommandConfigUpdateZeroFrequencySendsNACK(t *testing.T) {
 	worker, pub, _ := newCommandTestWorker(t)
